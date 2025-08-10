@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "typeRoots": ["./node_modules/@types", "./types"],
-    "types": ["node"],
+    // "types": ["node"],
     "lib": ["es2020"]
   },
   "include": ["src/**/*"],
