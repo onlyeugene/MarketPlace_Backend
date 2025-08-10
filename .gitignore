@@ -1,0 +1,20 @@
+# Ignore all dotenv files
+.env*
+
+# Ignore all log files
+*.log
+
+# Ignore all temporary files
+*.tmp
+# Ignore all backup files
+*.bak
+# Ignore all compiled files
+*.class
+# Ignore all cache files
+*.cache
+# Ignore all system files
+.DS_Store
+# Ignore all IDE specific files
+.idea/
+# Ignore all node modules
+node_modules/
