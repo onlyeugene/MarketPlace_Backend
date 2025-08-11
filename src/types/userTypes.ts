@@ -4,6 +4,7 @@ export interface IUserBase {
   username: string;
   firstname: string;
   lastname: string;
+  tempEmail?: string
   dob?: Date;
   email: string;
   password: string;

@@ -20,6 +20,7 @@ const userSchema = new Schema<IUserDocument>(
       trim: true,
       maxlength: [50, "First name cannot exceed 50 characters"],
     },
+    tempEmail: { type: String },
     lastname: {
       type: String,
       required: [true, "Last name is required"],

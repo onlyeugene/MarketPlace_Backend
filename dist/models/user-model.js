@@ -64,6 +64,7 @@ const userSchema = new mongoose_1.Schema({
         trim: true,
         maxlength: [50, "First name cannot exceed 50 characters"],
     },
+    tempEmail: { type: String },
     lastname: {
         type: String,
         required: [true, "Last name is required"],

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.loginSchema = exports.userSchema = exports.updatePasswordSchema = exports.updateUserDetailsSchema = void 0;
+exports.verifyOtpSchema = exports.updatePasswordSchema = exports.updateUserDetailsSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.loginSchema = exports.userSchema = void 0;
 const joi_1 = __importDefault(require("joi"));
 const userSchema = joi_1.default.object({
     username: joi_1.default.string()
@@ -117,13 +117,35 @@ const resetPasswordSchema = joi_1.default.object({
     }),
 });
 exports.resetPasswordSchema = resetPasswordSchema;
-exports.updateUserDetailsSchema = joi_1.default.object({
+const updateUserDetailsSchema = joi_1.default.object({
     username: joi_1.default.string().optional(),
     email: joi_1.default.string().email().optional(),
     firstname: joi_1.default.string().optional(),
     lastname: joi_1.default.string().optional(),
 }).or('username', 'email', 'firstname', 'lastname');
-exports.updatePasswordSchema = joi_1.default.object({
-    currentPassword: joi_1.default.string().required(),
-    newPassword: joi_1.default.string().required().min(8),
+exports.updateUserDetailsSchema = updateUserDetailsSchema;
+const updatePasswordSchema = joi_1.default.object({
+    currentPassword: joi_1.default.string().required().messages({
+        'any.required': 'Current password is required',
+    }),
+    newPassword: joi_1.default.string().required().min(8).messages({
+        'string.min': 'New password must be at least 8 characters long',
+        'any.required': 'New password is required',
+    }),
 });
+exports.updatePasswordSchema = updatePasswordSchema;
+const verifyOtpSchema = joi_1.default.object({
+    userId: joi_1.default.string().required().messages({
+        'any.required': 'User ID is required',
+    }),
+    otp: joi_1.default.string().length(6).pattern(/^\d+$/).required().messages({
+        'string.length': 'OTP must be 6 digits',
+        'string.pattern.base': 'OTP must contain only digits',
+        'any.required': 'OTP is required',
+    }),
+    type: joi_1.default.string().valid('registration', 'email-update').required().messages({
+        'any.only': 'Type must be either "registration" or "email-update"',
+        'any.required': 'Type is required',
+    }),
+});
+exports.verifyOtpSchema = verifyOtpSchema;

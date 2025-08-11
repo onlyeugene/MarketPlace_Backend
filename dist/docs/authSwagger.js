@@ -3,9 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const swaggerDocument = {
     openapi: '3.0.0',
     info: {
-        title: 'Backend Service API',
+        title: 'Authentication API',
         version: '1.0.0',
-        description: 'API for user authentication, including registration, login, password reset, and user profile updates.',
+        description: 'API for user authentication, including registration, login, and password reset.',
     },
     servers: [
         {
@@ -14,10 +14,10 @@ const swaggerDocument = {
         },
     ],
     paths: {
-        '/api/v1/auth/register': {
+        '/api/v1/register': {
             post: {
                 summary: 'Register a new user',
-                description: 'Creates a new user and issues a JWT token.',
+                description: 'Creates a new user and sends an OTP for verification.',
                 tags: ['Authentication'],
                 requestBody: {
                     required: true,
@@ -89,20 +89,20 @@ const swaggerDocument = {
                 },
                 responses: {
                     '201': {
-                        description: 'User registered successfully.',
+                        description: 'User registered successfully, OTP sent.',
                         content: {
                             'application/json': {
                                 schema: {
                                     type: 'object',
                                     properties: {
                                         status: { type: 'string', example: 'success' },
-                                        token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+                                        message: { type: 'string', example: 'Registration successful, please verify OTP sent to your email' },
                                         data: {
                                             type: 'object',
                                             properties: {
+                                                userId: { type: 'string', example: '68997961505b339d66223dcb' },
                                                 username: { type: 'string', example: 'johndoe123' },
                                                 email: { type: 'string', example: 'john.doe@example.com' },
-                                                fullName: { type: 'string', example: 'John Doe' },
                                             },
                                         },
                                     },
@@ -118,7 +118,21 @@ const swaggerDocument = {
                                     type: 'object',
                                     properties: {
                                         status: { type: 'string', example: 'error' },
-                                        message: { type: 'array', items: { type: 'string' }, example: ['Username is required'] },
+                                        message: { type: 'string', example: 'Account already exists' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    '429': {
+                        description: 'Too many registration attempts.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        status: { type: 'string', example: 'error' },
+                                        message: { type: 'string', example: 'Too many registration attempts. Try again later.' },
                                     },
                                 },
                             },
@@ -127,7 +141,7 @@ const swaggerDocument = {
                 },
             },
         },
-        '/api/v1/auth/login': {
+        '/api/v1/login': {
             post: {
                 summary: 'Login a user',
                 description: 'Authenticates a user and issues a JWT token.',
@@ -139,10 +153,9 @@ const swaggerDocument = {
                             schema: {
                                 type: 'object',
                                 properties: {
-                                    email: {
+                                    identifier: {
                                         type: 'string',
-                                        format: 'email',
-                                        description: 'Valid email address.',
+                                        description: 'Email or username.',
                                         example: 'john.doe@example.com',
                                     },
                                     password: {
@@ -151,7 +164,7 @@ const swaggerDocument = {
                                         example: 'securepassword123',
                                     },
                                 },
-                                required: ['email', 'password'],
+                                required: ['identifier', 'password'],
                             },
                         },
                     },
@@ -166,12 +179,14 @@ const swaggerDocument = {
                                     properties: {
                                         status: { type: 'string', example: 'success' },
                                         token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+                                        _id: { type: 'string', example: '68997961505b339d66223dcb' },
                                         data: {
                                             type: 'object',
                                             properties: {
                                                 username: { type: 'string', example: 'johndoe123' },
                                                 email: { type: 'string', example: 'john.doe@example.com' },
                                                 fullName: { type: 'string', example: 'John Doe' },
+                                                lastLogin: { type: 'string', format: 'date-time', example: '2025-08-11T23:59:00Z' },
                                             },
                                         },
                                     },
@@ -187,7 +202,21 @@ const swaggerDocument = {
                                     type: 'object',
                                     properties: {
                                         status: { type: 'string', example: 'error' },
-                                        message: { type: 'string', example: 'Invalid email or password' },
+                                        message: { type: 'string', example: 'Invalid credentials' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    '429': {
+                        description: 'Too many login attempts.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        status: { type: 'string', example: 'error' },
+                                        message: { type: 'string', example: 'Too many login attempts. Please try again later.' },
                                     },
                                 },
                             },
@@ -196,7 +225,7 @@ const swaggerDocument = {
                 },
             },
         },
-        '/api/v1/auth/forgot-password': {
+        '/api/v1/forgot-password': {
             post: {
                 summary: 'Request a password reset',
                 description: 'Sends a password reset email with a secure link.',
@@ -249,15 +278,15 @@ const swaggerDocument = {
                             },
                         },
                     },
-                    '500': {
-                        description: 'Failed to send email.',
+                    '429': {
+                        description: 'Too many attempts.',
                         content: {
                             'application/json': {
                                 schema: {
                                     type: 'object',
                                     properties: {
                                         status: { type: 'string', example: 'error' },
-                                        message: { type: 'string', example: 'Failed to send reset email' },
+                                        message: { type: 'string', example: 'Too many attempts, please try again later' },
                                     },
                                 },
                             },
@@ -266,7 +295,7 @@ const swaggerDocument = {
                 },
             },
         },
-        '/api/v1/auth/reset-password/{token}': {
+        '/api/v1/reset-password/{token}': {
             post: {
                 summary: 'Reset password',
                 description: 'Resets the user’s password using a reset token.',
@@ -337,181 +366,15 @@ const swaggerDocument = {
                             },
                         },
                     },
-                },
-            },
-        },
-        '/api/v1/auth/update-user-details': {
-            post: {
-                summary: 'Update user details',
-                description: 'Updates the authenticated user\'s details (username, email, firstname, lastname).',
-                tags: ['Authentication'],
-                security: [
-                    {
-                        bearerAuth: [],
-                    },
-                ],
-                requestBody: {
-                    required: true,
-                    content: {
-                        'application/json': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    username: {
-                                        type: 'string',
-                                        description: '3-30 characters, lowercase, alphanumeric, underscores.',
-                                        example: 'johndoe123',
-                                        nullable: true,
-                                    },
-                                    email: {
-                                        type: 'string',
-                                        format: 'email',
-                                        description: 'Valid email address.',
-                                        example: 'john.doe@example.com',
-                                        nullable: true,
-                                    },
-                                    firstname: {
-                                        type: 'string',
-                                        description: 'Max 50 characters, letters/spaces/hyphens.',
-                                        example: 'John',
-                                        nullable: true,
-                                    },
-                                    lastname: {
-                                        type: 'string',
-                                        description: 'Max 50 characters, letters/spaces/hyphens.',
-                                        example: 'Doe',
-                                        nullable: true,
-                                    },
-                                },
-                                required: [], // Optional fields
-                            },
-                        },
-                    },
-                },
-                responses: {
-                    '200': {
-                        description: 'User details updated successfully.',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string', example: 'success' },
-                                        data: {
-                                            type: 'object',
-                                            properties: {
-                                                username: { type: 'string', example: 'johndoe123' },
-                                                email: { type: 'string', example: 'john.doe@example.com' },
-                                                fullName: { type: 'string', example: 'John Doe' },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                    '400': {
-                        description: 'Validation error or duplicate username/email.',
+                    '429': {
+                        description: 'Too many attempts.',
                         content: {
                             'application/json': {
                                 schema: {
                                     type: 'object',
                                     properties: {
                                         status: { type: 'string', example: 'error' },
-                                        message: { type: 'array', items: { type: 'string' }, example: ['Email is already in use'] },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                    '401': {
-                        description: 'Unauthorized access.',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string', example: 'error' },
-                                        message: { type: 'string', example: 'Unauthorized' },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        '/api/v1/auth/update-password': {
-            post: {
-                summary: 'Update user password',
-                description: 'Updates the authenticated user\'s password.',
-                tags: ['Authentication'],
-                security: [
-                    {
-                        bearerAuth: [],
-                    },
-                ],
-                requestBody: {
-                    required: true,
-                    content: {
-                        'application/json': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    currentPassword: {
-                                        type: 'string',
-                                        description: 'Current password for verification.',
-                                        example: 'securepassword123',
-                                    },
-                                    newPassword: {
-                                        type: 'string',
-                                        description: 'New password, min 8 characters.',
-                                        example: 'newsecurepassword123',
-                                    },
-                                },
-                                required: ['currentPassword', 'newPassword'],
-                            },
-                        },
-                    },
-                },
-                responses: {
-                    '200': {
-                        description: 'Password updated successfully.',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string', example: 'success' },
-                                        message: { type: 'string', example: 'Password updated successfully' },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                    '400': {
-                        description: 'Validation error or compromised password.',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string', example: 'error' },
-                                        message: { type: 'array', items: { type: 'string' }, example: ['New password is compromised'] },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                    '401': {
-                        description: 'Unauthorized or invalid current password.',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string', example: 'error' },
-                                        message: { type: 'string', example: 'Invalid current password' },
+                                        message: { type: 'string', example: 'Too many attempts, please try again later' },
                                     },
                                 },
                             },
@@ -533,7 +396,7 @@ const swaggerDocument = {
     tags: [
         {
             name: 'Authentication',
-            description: 'User authentication and password management endpoints.',
+            description: 'User authentication and password reset endpoints.',
         },
     ],
 };

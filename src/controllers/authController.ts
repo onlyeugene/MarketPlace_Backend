@@ -4,26 +4,30 @@ import crypto from "crypto";
 import sanitizeHtml from "sanitize-html";
 import { Request, Response } from "express";
 import User from "../models/user-model";
+import OTP from "../models/otp-models";
 import { IUserDocument } from "../types/userTypes";
 import passwordResetTemplate from "../templates/passwordResetTemplate";
 import registrationTemplate from "../templates/registrationTemplate";
+import otpTemplate from "../templates/otpTemplate";
 import {
   userSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   updatePasswordSchema,
+  verifyOtpSchema,
 } from "../validations/userValidation";
 import rateLimitService from "../services/rateLimitService";
 import { checkDisposableEmail } from "../services/emailValidationService";
 import { checkCompromisedPassword } from "../services/passwordCheckService";
 import dotenv from "dotenv";
+import Joi from "joi";
 
 // Extend Request type to include ip and user
 declare module "express" {
   interface Request {
     ip?: string;
-    user?: { id: string }; // Updated to match JWT payload
+    user?: { id: string };
   }
 }
 
@@ -80,7 +84,15 @@ const createTransporter = () =>
   });
 
 /**
- * Register a new user with enhanced security checks
+ * Generate OTP
+ * @private
+ */
+const generateOTP = (): string => {
+  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+};
+
+/**
+ * Register a new user with OTP verification
  */
 const register = async (req: Request, res: Response): Promise<void> => {
   let ip = req.ip || "unknown";
@@ -149,25 +161,35 @@ const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const user = new User(value) as IUserDocument;
+    const user = new User({ ...value, isActive: false }) as IUserDocument; // Set isActive to false until OTP verified
     await user.save();
-    const token = signToken(user._id as string);
+
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+    await OTP.create({
+      userId: user._id,
+      code: otp,
+      type: 'registration',
+      expiresAt: otpExpires,
+    });
 
     const nameForTemplate =
       user.fullName || `${user.firstname} ${user.lastname}`.trim();
-    const message = registrationTemplate(nameForTemplate);
+    const message = otpTemplate(otp, nameForTemplate);
 
     const transporter = createTransporter();
     try {
       await transporter.sendMail({
         from: '"Market Place" <no-reply@yourapp.com>',
         to: user.email,
-        subject: "Registration Successful",
-        text: `Welcome ${nameForTemplate}, your account has been created successfully!`,
+        subject: "Verify Your Registration",
         html: message,
       });
     } catch (emailErr: any) {
       console.error("Email sending failed:", emailErr.message);
+      await User.deleteOne({ _id: user._id }); // Rollback user creation
+      res.status(500).json({ status: "error", message: "Failed to send OTP" });
+      return;
     }
 
     if (rateLimitService.isConnected()) {
@@ -176,11 +198,11 @@ const register = async (req: Request, res: Response): Promise<void> => {
 
     res.status(201).json({
       status: "success",
-      token,
+      message: "Registration successful, please verify OTP sent to your email",
       data: {
+        userId: user._id,
         username: user.username,
         email: user.email,
-        fullName: user.fullName,
       },
     });
   } catch (err: any) {
@@ -188,6 +210,302 @@ const register = async (req: Request, res: Response): Promise<void> => {
       await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
     }
     console.error("Register error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
+/**
+ * Resend OTP for registration or email update
+ */
+const resendOtp = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
+  try {
+    if (
+      rateLimitService.isConnected() &&
+      (await rateLimitService.isRateLimited(ip, "resendOtp", 3, 3600))
+    ) {
+      res.status(429).json({
+        status: "error",
+        message: "Too many OTP resend attempts. Try again later.",
+      });
+      return;
+    }
+
+    const { error, value } = Joi.object({
+      userId: Joi.string().required(),
+      type: Joi.string().valid('registration', 'email-update').required(),
+    }).validate(req.body, { abortEarly: false });
+    if (error) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "resendOtp", 3600);
+      }
+      res.status(400).json({
+        status: "error",
+        message: error.details.map((detail) => detail.message),
+      });
+      return;
+    }
+
+    const { userId, type } = value as { userId: string; type: 'registration' | 'email-update' };
+
+    const user = await User.findById(userId) as IUserDocument;
+    if (!user) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "resendOtp", 3600);
+      }
+      res.status(404).json({ status: "error", message: "User not found" });
+      return;
+    }
+
+    // Delete any existing OTP for this user and type
+    await OTP.deleteOne({ userId, type });
+
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+    await OTP.create({
+      userId: user._id,
+      code: otp,
+      type,
+      expiresAt: otpExpires,
+    });
+
+    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const email = type === 'email-update' ? user.tempEmail || user.email : user.email;
+    const subject = type === 'registration' ? "Verify Your Registration" : "Verify Your New Email";
+    const message = otpTemplate(otp, nameForTemplate);
+
+    const transporter = createTransporter();
+    try {
+      await transporter.sendMail({
+        from: '"Market Place" <no-reply@yourapp.com>',
+        to: email,
+        subject,
+        html: message,
+      });
+    } catch (emailErr: any) {
+      console.error("Email sending failed:", emailErr.message);
+      await OTP.deleteOne({ userId: user._id, type });
+      res.status(500).json({ status: "error", message: "Failed to send OTP" });
+      return;
+    }
+
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.resetRateLimit(ip, "resendOtp");
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "OTP resent successfully",
+      data: { userId: user._id },
+    });
+  } catch (err: any) {
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.incrementFailedAttempt(ip, "resendOtp", 3600);
+    }
+    console.error("ResendOtp error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
+/**
+ * Verify OTP for registration or email update
+ */
+const verifyOtp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Ensure verifyOtpSchema allows userId, otp, and type
+    const { error, value } = verifyOtpSchema.validate(req.body, {
+      abortEarly: false,
+    });
+    if (error) {
+      res.status(400).json({
+        status: "error",
+        message: error.details.map((detail) => detail.message),
+      });
+      return;
+    }
+
+    const { otp, userId, type } = value as { otp: string; userId: string; type: 'registration' | 'email-update' };
+    const otpRecord = await OTP.findOne({
+      userId,
+      code: otp,
+      type,
+      expiresAt: { $gt: Date.now() },
+    });
+
+    if (!otpRecord) {
+      res.status(400).json({ status: "error", message: "Invalid or expired OTP" });
+      return;
+    }
+
+    const user = await User.findById(userId) as IUserDocument;
+    if (!user) {
+      res.status(404).json({ status: "error", message: "User not found" });
+      return;
+    }
+
+    if (type === 'registration') {
+      user.isActive = true;
+      await user.save();
+      const token = signToken(user._id as string);
+
+      const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+      const message = registrationTemplate(nameForTemplate);
+
+      const transporter = createTransporter();
+      try {
+        await transporter.sendMail({
+          from: '"Market Place" <no-reply@yourapp.com>',
+          to: user.email,
+          subject: "Registration Successful",
+          text: `Welcome ${nameForTemplate}, your account has been created successfully!`,
+          html: message,
+        });
+      } catch (emailErr: any) {
+        console.error("Email sending failed:", emailErr.message);
+      }
+
+      await OTP.deleteOne({ _id: otpRecord._id });
+
+      res.status(200).json({
+        status: "success",
+        token,
+        data: {
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+        },
+      });
+    } else if (type === 'email-update') {
+      user.email = user.tempEmail || user.email;
+      user.tempEmail = undefined;
+      await user.save();
+      await OTP.deleteOne({ _id: otpRecord._id });
+
+      res.status(200).json({
+        status: "success",
+        data: {
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+        },
+      });
+    }
+  } catch (err: any) {
+    console.error("VerifyOtp error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
+/**
+ * Update user email with OTP verification
+ */
+const updateEmail = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ status: "error", message: "Unauthorized" });
+      return;
+    }
+
+    if (
+      rateLimitService.isConnected() &&
+      (await rateLimitService.isRateLimited(ip, "updateEmail", 3, 3600))
+    ) {
+      res.status(429).json({
+        status: "error",
+        message: "Too many email update attempts. Try again later.",
+      });
+      return;
+    }
+
+    const { error, value } = Joi.object({
+      email: Joi.string().email().required(),
+    }).validate(req.body, { abortEarly: false });
+    if (error) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updateEmail", 3600);
+      }
+      res.status(400).json({
+        status: "error",
+        message: error.details.map((detail) => detail.message),
+      });
+      return;
+    }
+
+    const { email } = value;
+    if (await checkDisposableEmail(email)) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updateEmail", 3600);
+      }
+      res.status(400).json({
+        status: "error",
+        message: "Disposable email addresses are not allowed",
+      });
+      return;
+    }
+
+    const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+    if (existingUser) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updateEmail", 3600);
+      }
+      res.status(400).json({ status: "error", message: "Email already in use" });
+      return;
+    }
+
+    const user = await User.findById(userId) as IUserDocument;
+    if (!user) {
+      res.status(404).json({ status: "error", message: "User not found" });
+      return;
+    }
+
+    user.tempEmail = email;
+    await user.save();
+
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+    await OTP.create({
+      userId: user._id,
+      code: otp,
+      type: 'email-update',
+      expiresAt: otpExpires,
+    });
+
+    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const message = otpTemplate(otp, nameForTemplate);
+
+    const transporter = createTransporter();
+    try {
+      await transporter.sendMail({
+        from: '"Market Place" <no-reply@yourapp.com>',
+        to: email,
+        subject: "Verify Your New Email",
+        html: message,
+      });
+    } catch (emailErr: any) {
+      console.error("Email sending failed:", emailErr.message);
+      await OTP.deleteOne({ userId: user._id, type: 'email-update' });
+      user.tempEmail = undefined;
+      await user.save();
+      res.status(500).json({ status: "error", message: "Failed to send OTP" });
+      return;
+    }
+
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.resetRateLimit(ip, "updateEmail");
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "OTP sent to new email for verification",
+      data: { userId: user._id },
+    });
+  } catch (err: any) {
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.incrementFailedAttempt(ip, "updateEmail", 3600);
+    }
+    console.error("UpdateEmail error:", err);
     res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
@@ -286,7 +604,6 @@ const login = async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         fullName: user.fullName,
         lastLogin: user.lastLogin,
-        
       },
     });
   } catch (err: any) {
@@ -525,4 +842,4 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export { register, login, forgotPassword, resetPassword, updatePassword };
+export { register, login, forgotPassword, resetPassword, updatePassword, verifyOtp, updateEmail, resendOtp };

@@ -1,17 +1,19 @@
 import { Request, Response } from "express";
 import User from "../models/user-model";
 import { IUserDocument } from "../types/userTypes";
-import { updateUserDetailsSchema } from "../validations/userValidation";
+import Joi from 'joi';
 import { checkDisposableEmail } from "../services/emailValidationService";
 import sanitizeHtml from "sanitize-html";
+import { updateUserDetailsSchema } from "../validations/userValidation";
 
 // Extend Request type to include ip and user with id from JWT
 declare module "express" {
   interface Request {
     ip?: string;
-    user?: { id: string }; // Updated to match JWT payload
+    user?: { id: string };
   }
 }
+
 
 const updateUserDetails = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -23,7 +25,6 @@ const updateUserDetails = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Use req.user?.id to match the updated type
     if (req.user?.id !== userId) {
       console.log("Mismatch: req.user.id =", req.user?.id, "vs userId =", userId);
       res.status(403).json({ status: "error", message: "Forbidden: Cannot update another user's details" });
@@ -41,27 +42,18 @@ const updateUserDetails = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    value.username = sanitizeHtml(value.username);
-    value.email = sanitizeHtml(value.email);
-    value.firstname = sanitizeHtml(value.firstname);
-    value.lastname = sanitizeHtml(value.lastname);
-
-    if (await checkDisposableEmail(value.email)) {
-      res.status(400).json({
-        status: "error",
-        message: "Disposable email addresses are not allowed",
-      });
-      return;
-    }
+    // Sanitize only provided fields
+    if (value.username) value.username = sanitizeHtml(value.username);
+    if (value.dob) value.dob = new Date(value.dob);
 
     const existingUser = await User.findOne({
       $and: [
         { _id: { $ne: userId } },
-        { $or: [{ username: value.username }, { email: value.email }] },
+        { username: value.username },
       ],
     });
     if (existingUser) {
-      res.status(400).json({ status: "error", message: "Account already exists" });
+      res.status(400).json({ status: "error", message: "Username already in use" });
       return;
     }
 
@@ -79,7 +71,7 @@ const updateUserDetails = async (req: Request, res: Response): Promise<void> => 
       status: "success",
       data: {
         username: user.username,
-        email: user.email,
+        dob: user.dob,
         fullName: user.fullName,
       },
     });

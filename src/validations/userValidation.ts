@@ -112,16 +112,36 @@ const resetPasswordSchema = Joi.object({
     }),
 });
 
-export const updateUserDetailsSchema = Joi.object({
+const updateUserDetailsSchema = Joi.object({
   username: Joi.string().optional(),
   email: Joi.string().email().optional(),
   firstname: Joi.string().optional(),
   lastname: Joi.string().optional(),
 }).or('username', 'email', 'firstname', 'lastname');
 
-export const updatePasswordSchema = Joi.object({
-  currentPassword: Joi.string().required(),
-  newPassword: Joi.string().required().min(8),
+const updatePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required().messages({
+    'any.required': 'Current password is required',
+  }),
+  newPassword: Joi.string().required().min(8).messages({
+    'string.min': 'New password must be at least 8 characters long',
+    'any.required': 'New password is required',
+  }),
 });
 
-export { userSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema };
+const verifyOtpSchema = Joi.object({
+  userId: Joi.string().required().messages({
+    'any.required': 'User ID is required',
+  }),
+  otp: Joi.string().length(6).pattern(/^\d+$/).required().messages({
+    'string.length': 'OTP must be 6 digits',
+    'string.pattern.base': 'OTP must contain only digits',
+    'any.required': 'OTP is required',
+  }),
+  type: Joi.string().valid('registration', 'email-update').required().messages({
+    'any.only': 'Type must be either "registration" or "email-update"',
+    'any.required': 'Type is required',
+  }),
+});
+
+export { userSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, updateUserDetailsSchema, updatePasswordSchema, verifyOtpSchema };
