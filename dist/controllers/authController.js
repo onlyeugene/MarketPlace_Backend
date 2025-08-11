@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
+exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -30,7 +30,7 @@ function isStringValue(value) {
     return /^\d+(ms|s|m|h|d|w|y)$/.test(value);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d"; // Default to '1d' if undefined
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 const APP_URL = process.env.APP_URL || "http://localhost:9540";
 if (!JWT_SECRET) {
     throw new Error("JWT_SECRET is not defined in environment variables");
@@ -39,21 +39,6 @@ if (!JWT_SECRET) {
  * Generate JWT token
  * @private
  */
-// const signToken = (id: string): string => {
-//   // Default to '1d' if undefined or invalid
-//   let expiresIn: StringValue | number = '1d';
-//   if (JWT_EXPIRES_IN) {
-//     if (isStringValue(JWT_EXPIRES_IN)) {
-//       expiresIn = JWT_EXPIRES_IN;
-//     } else if (!isNaN(Number(JWT_EXPIRES_IN))) {
-//       expiresIn = Number(JWT_EXPIRES_IN);
-//     }
-//   }
-//   const options: SignOptions = {
-//     expiresIn,
-//   };
-//   return jwt.sign({ id }, JWT_SECRET, options);
-// };
 const signToken = (id) => {
     const options = {
         expiresIn: JWT_EXPIRES_IN,
@@ -79,9 +64,8 @@ const createTransporter = () => nodemailer_1.default.createTransport({
  * Register a new user with enhanced security checks
  */
 const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    let ip = req.ip || "unknown";
     try {
-        const ip = req.ip || "unknown"; // Fallback for undefined req.ip
-        // Rate limit registration attempts if Redis is connected
         if (rateLimitService_1.default.isConnected() &&
             (yield rateLimitService_1.default.isRateLimited(ip, "register", 5, 3600))) {
             res.status(429).json({
@@ -90,7 +74,6 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        // Validate request body
         const { error, value } = userValidation_1.userSchema.validate(req.body, {
             abortEarly: false,
         });
@@ -104,12 +87,10 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        // Sanitize inputs
         value.username = (0, sanitize_html_1.default)(value.username);
         value.email = (0, sanitize_html_1.default)(value.email);
         value.firstname = (0, sanitize_html_1.default)(value.firstname);
         value.lastname = (0, sanitize_html_1.default)(value.lastname);
-        // Check for disposable email
         if (yield (0, emailValidationService_1.checkDisposableEmail)(value.email)) {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
@@ -120,7 +101,6 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        // Check for compromised password
         if (yield (0, passwordCheckService_1.checkCompromisedPassword)(value.password)) {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
@@ -131,7 +111,6 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        // Check for existing user
         const existingUser = yield user_model_1.default.findOne({
             $or: [{ username: value.username }, { email: value.email }],
         });
@@ -139,16 +118,12 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
-            res
-                .status(400)
-                .json({ status: "error", message: "Account already exists" });
+            res.status(400).json({ status: "error", message: "Account already exists" });
             return;
         }
-        // Create and save new user
         const user = new user_model_1.default(value);
         yield user.save();
-        const token = signToken(user._id); // Convert _id to string
-        // Send welcome email
+        const token = signToken(user._id);
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
         const message = (0, registrationTemplate_1.default)(nameForTemplate);
         const transporter = createTransporter();
@@ -164,7 +139,6 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         catch (emailErr) {
             console.error("Email sending failed:", emailErr.message);
         }
-        // Reset rate limit on successful registration
         if (rateLimitService_1.default.isConnected()) {
             yield rateLimitService_1.default.resetRateLimit(ip, "register");
         }
@@ -180,12 +154,10 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
     catch (err) {
         if (rateLimitService_1.default.isConnected()) {
-            yield rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "register", 3600);
+            yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
         }
         console.error("Register error:", err);
-        res
-            .status(400)
-            .json({ status: "error", message: err.message || "Registration failed" });
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 exports.register = register;
@@ -193,9 +165,8 @@ exports.register = register;
  * Login a user with enhanced security checks
  */
 const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    let ip = req.ip || "unknown";
     try {
-        const ip = req.ip || "unknown"; // Fallback for undefined req.ip
-        // Rate limit login attempts
         if (rateLimitService_1.default.isConnected() &&
             (yield rateLimitService_1.default.isRateLimited(ip, "login", 5, 900))) {
             res.status(429).json({
@@ -230,9 +201,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        // Sanitize identifier
         const sanitizedIdentifier = (0, sanitize_html_1.default)(identifier);
-        // Check if identifier is a valid email
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedIdentifier);
         const query = isEmail
             ? { email: sanitizedIdentifier }
@@ -245,7 +214,6 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             res.status(401).json({ status: "error", message: "Invalid credentials" });
             return;
         }
-        // Check for MFA (if enabled)
         if (user.mfaEnabled && user.verifyMfaCode) {
             const mfaCode = req.body.mfaCode || "";
             if (!mfaCode || !(yield user.verifyMfaCode(mfaCode))) {
@@ -256,19 +224,17 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 return;
             }
         }
-        // Log IP address for security monitoring
         yield user.logLoginAttempt(ip, true);
-        // Invalidate previous sessions
         yield user.invalidateOtherSessions();
         yield user.updateLastLogin();
-        const token = signToken(user._id); // Convert _id to string
-        // Reset rate limit on successful login
+        const token = signToken(user._id);
         if (rateLimitService_1.default.isConnected()) {
             yield rateLimitService_1.default.resetRateLimit(ip, "login");
         }
         res.status(200).json({
             status: "success",
             token,
+            _id: user._id,
             data: {
                 username: user.username,
                 email: user.email,
@@ -279,12 +245,10 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
     catch (err) {
         if (rateLimitService_1.default.isConnected()) {
-            yield rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "login", 900);
+            yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
         }
         console.error("Login error:", err);
-        res
-            .status(400)
-            .json({ status: "error", message: err.message || "Login failed" });
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 exports.login = login;
@@ -329,7 +293,7 @@ const forgotPassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
             console.error("Email sending failed:", emailErr.message);
             res
                 .status(500)
-                .json({ status: "error", message: "Failed to send reset email" });
+                .json({ status: "error", message: "Internal server error" });
             return;
         }
         res
@@ -338,9 +302,7 @@ const forgotPassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
     catch (err) {
         console.error("ForgotPassword error:", err);
-        res
-            .status(500)
-            .json({ status: "error", message: "Failed to send reset email" });
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 exports.forgotPassword = forgotPassword;
@@ -390,7 +352,7 @@ const resetPassword = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         user.passwordResetToken = undefined;
         user.passwordResetExpires = undefined;
         yield user.save();
-        const token = signToken(user._id); // Convert _id to string
+        const token = signToken(user._id);
         res.status(200).json({
             status: "success",
             token,
@@ -403,12 +365,92 @@ const resetPassword = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
     catch (err) {
         console.error("ResetPassword error:", err);
-        res
-            .status(400)
-            .json({
-            status: "error",
-            message: err.message || "Failed to reset password",
-        });
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 exports.resetPassword = resetPassword;
+/**
+ * Update user password
+ */
+const updatePassword = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    let ip = req.ip || "unknown";
+    try {
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+        if (!userId) {
+            res.status(401).json({ status: "error", message: "Unauthorized" });
+            return;
+        }
+        if (rateLimitService_1.default.isConnected() &&
+            (yield rateLimitService_1.default.isRateLimited(ip, "updatePassword", 3, 3600))) {
+            res.status(429).json({
+                status: "error",
+                message: "Too many password update attempts. Try again later.",
+            });
+            return;
+        }
+        const { error, value } = userValidation_1.updatePasswordSchema.validate(req.body, {
+            abortEarly: false,
+        });
+        if (error) {
+            if (rateLimitService_1.default.isConnected()) {
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "updatePassword", 3600);
+            }
+            res.status(400).json({
+                status: "error",
+                message: error.details.map((detail) => detail.message),
+            });
+            return;
+        }
+        const { currentPassword, newPassword } = value;
+        const user = (yield user_model_1.default.findById(userId).select("+password"));
+        if (!user || !(yield user.comparePassword(currentPassword))) {
+            if (rateLimitService_1.default.isConnected()) {
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "updatePassword", 3600);
+            }
+            res.status(401).json({ status: "error", message: "Invalid current password" });
+            return;
+        }
+        if (yield (0, passwordCheckService_1.checkCompromisedPassword)(newPassword)) {
+            if (rateLimitService_1.default.isConnected()) {
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "updatePassword", 3600);
+            }
+            res.status(400).json({
+                status: "error",
+                message: "This password has been compromised in a data breach. Please choose a different password.",
+            });
+            return;
+        }
+        user.password = newPassword;
+        yield user.save();
+        const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+        const message = `Dear ${nameForTemplate},\n\nYour password has been successfully updated. If you did not request this change, please contact support immediately.\n\nBest,\nMarket Place Team`;
+        const transporter = createTransporter();
+        try {
+            yield transporter.sendMail({
+                from: '"Market Place" <no-reply@yourapp.com>',
+                to: user.email,
+                subject: "Password Updated",
+                text: message,
+            });
+        }
+        catch (emailErr) {
+            console.error("Email sending failed:", emailErr.message);
+        }
+        if (rateLimitService_1.default.isConnected()) {
+            yield rateLimitService_1.default.resetRateLimit(ip, "updatePassword");
+        }
+        res.status(200).json({
+            status: "success",
+            message: "Password updated successfully",
+        });
+    }
+    catch (err) {
+        if (rateLimitService_1.default.isConnected()) {
+            yield rateLimitService_1.default.incrementFailedAttempt(ip, "updatePassword", 3600);
+        }
+        console.error("UpdatePassword error:", err);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+exports.updatePassword = updatePassword;

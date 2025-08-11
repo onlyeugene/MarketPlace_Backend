@@ -112,4 +112,16 @@ const resetPasswordSchema = Joi.object({
     }),
 });
 
+export const updateUserDetailsSchema = Joi.object({
+  username: Joi.string().optional(),
+  email: Joi.string().email().optional(),
+  firstname: Joi.string().optional(),
+  lastname: Joi.string().optional(),
+}).or('username', 'email', 'firstname', 'lastname');
+
+export const updatePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required(),
+  newPassword: Joi.string().required().min(8),
+});
+
 export { userSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema };

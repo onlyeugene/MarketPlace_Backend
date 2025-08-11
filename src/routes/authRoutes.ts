@@ -1,6 +1,8 @@
 import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, forgotPassword, resetPassword } from '../controllers/authController';
+import { register, login, forgotPassword, resetPassword, updatePassword } from '../controllers/authController';
+import { authenticateToken } from '../middleware/authMiddleware'
+import { updateUserDetails } from '../controllers/profileUpdateController';
 
 /**
  * @module routes/authRoutes
@@ -42,5 +44,19 @@ router.post('/forgot-password', authLimiter, forgotPassword);
  * @access Public
  */
 router.post('/reset-password/:token', authLimiter, resetPassword);
+
+/**
+ * @route POST /update-user-details
+ * @desc Update user details (username, email, firstname, lastname)
+ * @access Private
+ */
+router.put('/update-details/:id', authenticateToken, authLimiter, updateUserDetails);
+
+/**
+ * @route POST /update-password
+ * @desc Update the user's password
+ * @access Private
+ */
+router.post('/update-password', authenticateToken, authLimiter, updatePassword);
 
 export default router;

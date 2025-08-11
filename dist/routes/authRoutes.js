@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const authController_1 = require("../controllers/authController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const profileUpdateController_1 = require("../controllers/profileUpdateController");
 /**
  * @module routes/authRoutes
  * @description Express router for authentication-related endpoints
@@ -41,4 +43,16 @@ router.post('/forgot-password', authLimiter, authController_1.forgotPassword);
  * @access Public
  */
 router.post('/reset-password/:token', authLimiter, authController_1.resetPassword);
+/**
+ * @route POST /update-user-details
+ * @desc Update user details (username, email, firstname, lastname)
+ * @access Private
+ */
+router.put('/update-details/:id', authMiddleware_1.authenticateToken, authLimiter, profileUpdateController_1.updateUserDetails);
+/**
+ * @route POST /update-password
+ * @desc Update the user's password
+ * @access Private
+ */
+router.post('/update-password', authMiddleware_1.authenticateToken, authLimiter, authController_1.updatePassword);
 exports.default = router;

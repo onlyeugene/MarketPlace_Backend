@@ -12,11 +12,20 @@ import {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  updatePasswordSchema,
 } from "../validations/userValidation";
 import rateLimitService from "../services/rateLimitService";
 import { checkDisposableEmail } from "../services/emailValidationService";
 import { checkCompromisedPassword } from "../services/passwordCheckService";
 import dotenv from "dotenv";
+
+// Extend Request type to include ip and user
+declare module "express" {
+  interface Request {
+    ip?: string;
+    user?: { id: string }; // Updated to match JWT payload
+  }
+}
 
 dotenv.config();
 
@@ -28,15 +37,14 @@ dotenv.config();
 /**
  * Validate environment variables
  */
-type StringValue = `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
+type StringValue = `${number}${"ms" | "s" | "m" | "h" | "d" | "w" | "y"}`;
 
 function isStringValue(value: string): value is StringValue {
   return /^\d+(ms|s|m|h|d|w|y)$/.test(value);
 }
 
-
 const JWT_SECRET = process.env.JWT_SECRET as string;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d"; // Default to '1d' if undefined
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 const APP_URL = process.env.APP_URL || "http://localhost:9540";
 
 if (!JWT_SECRET) {
@@ -47,30 +55,13 @@ if (!JWT_SECRET) {
  * Generate JWT token
  * @private
  */
-// const signToken = (id: string): string => {
-//   // Default to '1d' if undefined or invalid
-//   let expiresIn: StringValue | number = '1d';
-  
-//   if (JWT_EXPIRES_IN) {
-//     if (isStringValue(JWT_EXPIRES_IN)) {
-//       expiresIn = JWT_EXPIRES_IN;
-//     } else if (!isNaN(Number(JWT_EXPIRES_IN))) {
-//       expiresIn = Number(JWT_EXPIRES_IN);
-//     }
-//   }
-
-//   const options: SignOptions = {
-//     expiresIn,
-//   };
-//   return jwt.sign({ id }, JWT_SECRET, options);
-// };
-
 const signToken = (id: string): string => {
-    const options: SignOptions = {
-      expiresIn: JWT_EXPIRES_IN as StringValue,
-    };
-    return jwt.sign({ id }, JWT_SECRET, options);
+  const options: SignOptions = {
+    expiresIn: JWT_EXPIRES_IN as StringValue,
   };
+  return jwt.sign({ id }, JWT_SECRET, options);
+};
+
 /**
  * Create nodemailer transporter
  */
@@ -92,10 +83,8 @@ const createTransporter = () =>
  * Register a new user with enhanced security checks
  */
 const register = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
   try {
-    const ip = req.ip || "unknown"; // Fallback for undefined req.ip
-
-    // Rate limit registration attempts if Redis is connected
     if (
       rateLimitService.isConnected() &&
       (await rateLimitService.isRateLimited(ip, "register", 5, 3600))
@@ -107,7 +96,6 @@ const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Validate request body
     const { error, value } = userSchema.validate(req.body, {
       abortEarly: false,
     });
@@ -122,13 +110,11 @@ const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Sanitize inputs
     value.username = sanitizeHtml(value.username);
     value.email = sanitizeHtml(value.email);
     value.firstname = sanitizeHtml(value.firstname);
     value.lastname = sanitizeHtml(value.lastname);
 
-    // Check for disposable email
     if (await checkDisposableEmail(value.email)) {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
@@ -140,7 +126,6 @@ const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check for compromised password
     if (await checkCompromisedPassword(value.password)) {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
@@ -153,7 +138,6 @@ const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check for existing user
     const existingUser = await User.findOne({
       $or: [{ username: value.username }, { email: value.email }],
     });
@@ -161,18 +145,14 @@ const register = async (req: Request, res: Response): Promise<void> => {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
       }
-      res
-        .status(400)
-        .json({ status: "error", message: "Account already exists" });
+      res.status(400).json({ status: "error", message: "Account already exists" });
       return;
     }
 
-    // Create and save new user
     const user = new User(value) as IUserDocument;
     await user.save();
-    const token = signToken(user._id as string); // Convert _id to string
+    const token = signToken(user._id as string);
 
-    // Send welcome email
     const nameForTemplate =
       user.fullName || `${user.firstname} ${user.lastname}`.trim();
     const message = registrationTemplate(nameForTemplate);
@@ -190,7 +170,6 @@ const register = async (req: Request, res: Response): Promise<void> => {
       console.error("Email sending failed:", emailErr.message);
     }
 
-    // Reset rate limit on successful registration
     if (rateLimitService.isConnected()) {
       await rateLimitService.resetRateLimit(ip, "register");
     }
@@ -206,16 +185,10 @@ const register = async (req: Request, res: Response): Promise<void> => {
     });
   } catch (err: any) {
     if (rateLimitService.isConnected()) {
-      await rateLimitService.incrementFailedAttempt(
-        req.ip || "unknown",
-        "register",
-        3600
-      );
+      await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
     }
     console.error("Register error:", err);
-    res
-      .status(400)
-      .json({ status: "error", message: err.message || "Registration failed" });
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
 
@@ -223,10 +196,8 @@ const register = async (req: Request, res: Response): Promise<void> => {
  * Login a user with enhanced security checks
  */
 const login = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
   try {
-    const ip = req.ip || "unknown"; // Fallback for undefined req.ip
-
-    // Rate limit login attempts
     if (
       rateLimitService.isConnected() &&
       (await rateLimitService.isRateLimited(ip, "login", 5, 900))
@@ -269,10 +240,8 @@ const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Sanitize identifier
     const sanitizedIdentifier = sanitizeHtml(identifier);
 
-    // Check if identifier is a valid email
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedIdentifier);
     const query = isEmail
       ? { email: sanitizedIdentifier }
@@ -288,7 +257,6 @@ const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check for MFA (if enabled)
     if (user.mfaEnabled && user.verifyMfaCode) {
       const mfaCode = (req.body.mfaCode as string) || "";
       if (!mfaCode || !(await user.verifyMfaCode(mfaCode))) {
@@ -300,15 +268,11 @@ const login = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // Log IP address for security monitoring
     await user.logLoginAttempt(ip, true);
-
-    // Invalidate previous sessions
     await user.invalidateOtherSessions();
     await user.updateLastLogin();
-    const token = signToken(user._id as string); // Convert _id to string
+    const token = signToken(user._id as string);
 
-    // Reset rate limit on successful login
     if (rateLimitService.isConnected()) {
       await rateLimitService.resetRateLimit(ip, "login");
     }
@@ -316,25 +280,21 @@ const login = async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({
       status: "success",
       token,
+      _id: user._id,
       data: {
         username: user.username,
         email: user.email,
         fullName: user.fullName,
         lastLogin: user.lastLogin,
+        
       },
     });
   } catch (err: any) {
     if (rateLimitService.isConnected()) {
-      await rateLimitService.incrementFailedAttempt(
-        req.ip || "unknown",
-        "login",
-        900
-      );
+      await rateLimitService.incrementFailedAttempt(ip, "login", 900);
     }
     console.error("Login error:", err);
-    res
-      .status(400)
-      .json({ status: "error", message: err.message || "Login failed" });
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
 
@@ -383,7 +343,7 @@ const forgotPassword = async (req: Request, res: Response): Promise<void> => {
       console.error("Email sending failed:", emailErr.message);
       res
         .status(500)
-        .json({ status: "error", message: "Failed to send reset email" });
+        .json({ status: "error", message: "Internal server error" });
       return;
     }
 
@@ -392,9 +352,7 @@ const forgotPassword = async (req: Request, res: Response): Promise<void> => {
       .json({ status: "success", message: "Password reset email sent" });
   } catch (err: any) {
     console.error("ForgotPassword error:", err);
-    res
-      .status(500)
-      .json({ status: "error", message: "Failed to send reset email" });
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
 
@@ -452,7 +410,7 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
     user.passwordResetExpires = undefined;
     await user.save();
 
-    const token = signToken(user._id as string); // Convert _id to string
+    const token = signToken(user._id as string);
 
     res.status(200).json({
       status: "success",
@@ -465,13 +423,106 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
     });
   } catch (err: any) {
     console.error("ResetPassword error:", err);
-    res
-      .status(400)
-      .json({
-        status: "error",
-        message: err.message || "Failed to reset password",
-      });
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
 
-export { register, login, forgotPassword, resetPassword };
+/**
+ * Update user password
+ */
+const updatePassword = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ status: "error", message: "Unauthorized" });
+      return;
+    }
+
+    if (
+      rateLimitService.isConnected() &&
+      (await rateLimitService.isRateLimited(ip, "updatePassword", 3, 3600))
+    ) {
+      res.status(429).json({
+        status: "error",
+        message: "Too many password update attempts. Try again later.",
+      });
+      return;
+    }
+
+    const { error, value } = updatePasswordSchema.validate(req.body, {
+      abortEarly: false,
+    });
+    if (error) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+      }
+      res.status(400).json({
+        status: "error",
+        message: error.details.map((detail) => detail.message),
+      });
+      return;
+    }
+
+    const { currentPassword, newPassword } = value as {
+      currentPassword: string;
+      newPassword: string;
+    };
+
+    const user = (await User.findById(userId).select("+password")) as IUserDocument;
+    if (!user || !(await user.comparePassword(currentPassword))) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+      }
+      res.status(401).json({ status: "error", message: "Invalid current password" });
+      return;
+    }
+
+    if (await checkCompromisedPassword(newPassword)) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+      }
+      res.status(400).json({
+        status: "error",
+        message: "This password has been compromised in a data breach. Please choose a different password.",
+      });
+      return;
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const message = `Dear ${nameForTemplate},\n\nYour password has been successfully updated. If you did not request this change, please contact support immediately.\n\nBest,\nMarket Place Team`;
+
+    const transporter = createTransporter();
+    try {
+      await transporter.sendMail({
+        from: '"Market Place" <no-reply@yourapp.com>',
+        to: user.email,
+        subject: "Password Updated",
+        text: message,
+      });
+    } catch (emailErr: any) {
+      console.error("Email sending failed:", emailErr.message);
+    }
+
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.resetRateLimit(ip, "updatePassword");
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Password updated successfully",
+    });
+  } catch (err: any) {
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+    }
+    console.error("UpdatePassword error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
+export { register, login, forgotPassword, resetPassword, updatePassword };

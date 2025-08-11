@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import authRoutes from './routes/authRoutes';
 import swaggerUi from 'swagger-ui-express';
-import swaggerDocument from './docs/swagger';
+import swaggerDocument from './docs/authSwagger';
 
 // Initialize environment variables
 dotenv.config();

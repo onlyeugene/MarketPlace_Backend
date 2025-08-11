@@ -5,7 +5,7 @@ const swaggerDocument: OpenApiSpec = {
   info: {
     title: 'Backend Service API',
     version: '1.0.0',
-    description: 'API for user authentication, including registration, login, and password reset.',
+    description: 'API for user authentication, including registration, login, password reset, and user profile updates.',
   },
   servers: [
     {
@@ -309,7 +309,7 @@ const swaggerDocument: OpenApiSpec = {
                   type: 'object',
                   properties: {
                     status: { type: 'string', example: 'success' },
-                    token: { type: 'string', example: 'eyJhbGciOiJIUz barrelCI6IkpXVCJ9...' },
+                    token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
                     data: {
                       type: 'object',
                       properties: {
@@ -338,6 +338,195 @@ const swaggerDocument: OpenApiSpec = {
             },
           },
         },
+      },
+    },
+    '/api/v1/auth/update-user-details': {
+      post: {
+        summary: 'Update user details',
+        description: 'Updates the authenticated user\'s details (username, email, firstname, lastname).',
+        tags: ['Authentication'],
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: {
+                    type: 'string',
+                    description: '3-30 characters, lowercase, alphanumeric, underscores.',
+                    example: 'johndoe123',
+                    nullable: true,
+                  },
+                  email: {
+                    type: 'string',
+                    format: 'email',
+                    description: 'Valid email address.',
+                    example: 'john.doe@example.com',
+                    nullable: true,
+                  },
+                  firstname: {
+                    type: 'string',
+                    description: 'Max 50 characters, letters/spaces/hyphens.',
+                    example: 'John',
+                    nullable: true,
+                  },
+                  lastname: {
+                    type: 'string',
+                    description: 'Max 50 characters, letters/spaces/hyphens.',
+                    example: 'Doe',
+                    nullable: true,
+                  },
+                },
+                required: [], // Optional fields
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'User details updated successfully.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'success' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        username: { type: 'string', example: 'johndoe123' },
+                        email: { type: 'string', example: 'john.doe@example.com' },
+                        fullName: { type: 'string', example: 'John Doe' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Validation error or duplicate username/email.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'error' },
+                    message: { type: 'array', items: { type: 'string' }, example: ['Email is already in use'] },
+                  },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized access.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'error' },
+                    message: { type: 'string', example: 'Unauthorized' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/v1/auth/update-password': {
+      post: {
+        summary: 'Update user password',
+        description: 'Updates the authenticated user\'s password.',
+        tags: ['Authentication'],
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  currentPassword: {
+                    type: 'string',
+                    description: 'Current password for verification.',
+                    example: 'securepassword123',
+                  },
+                  newPassword: {
+                    type: 'string',
+                    description: 'New password, min 8 characters.',
+                    example: 'newsecurepassword123',
+                  },
+                },
+                required: ['currentPassword', 'newPassword'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Password updated successfully.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'success' },
+                    message: { type: 'string', example: 'Password updated successfully' },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Validation error or compromised password.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'error' },
+                    message: { type: 'array', items: { type: 'string' }, example: ['New password is compromised'] },
+                  },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized or invalid current password.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'error' },
+                    message: { type: 'string', example: 'Invalid current password' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
       },
     },
   },
