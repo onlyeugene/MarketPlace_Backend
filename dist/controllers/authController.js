@@ -1,4 +1,13 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -69,12 +78,12 @@ const createTransporter = () => nodemailer_1.default.createTransport({
 /**
  * Register a new user with enhanced security checks
  */
-const register = async (req, res) => {
+const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const ip = req.ip || "unknown"; // Fallback for undefined req.ip
         // Rate limit registration attempts if Redis is connected
         if (rateLimitService_1.default.isConnected() &&
-            (await rateLimitService_1.default.isRateLimited(ip, "register", 5, 3600))) {
+            (yield rateLimitService_1.default.isRateLimited(ip, "register", 5, 3600))) {
             res.status(429).json({
                 status: "error",
                 message: "Too many registration attempts. Try again later.",
@@ -87,7 +96,7 @@ const register = async (req, res) => {
         });
         if (error) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
             res.status(400).json({
                 status: "error",
@@ -101,9 +110,9 @@ const register = async (req, res) => {
         value.firstname = (0, sanitize_html_1.default)(value.firstname);
         value.lastname = (0, sanitize_html_1.default)(value.lastname);
         // Check for disposable email
-        if (await (0, emailValidationService_1.checkDisposableEmail)(value.email)) {
+        if (yield (0, emailValidationService_1.checkDisposableEmail)(value.email)) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
             res.status(400).json({
                 status: "error",
@@ -112,9 +121,9 @@ const register = async (req, res) => {
             return;
         }
         // Check for compromised password
-        if (await (0, passwordCheckService_1.checkCompromisedPassword)(value.password)) {
+        if (yield (0, passwordCheckService_1.checkCompromisedPassword)(value.password)) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
             res.status(400).json({
                 status: "error",
@@ -123,12 +132,12 @@ const register = async (req, res) => {
             return;
         }
         // Check for existing user
-        const existingUser = await user_model_1.default.findOne({
+        const existingUser = yield user_model_1.default.findOne({
             $or: [{ username: value.username }, { email: value.email }],
         });
         if (existingUser) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
             res
                 .status(400)
@@ -137,14 +146,14 @@ const register = async (req, res) => {
         }
         // Create and save new user
         const user = new user_model_1.default(value);
-        await user.save();
+        yield user.save();
         const token = signToken(user._id); // Convert _id to string
         // Send welcome email
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
         const message = (0, registrationTemplate_1.default)(nameForTemplate);
         const transporter = createTransporter();
         try {
-            await transporter.sendMail({
+            yield transporter.sendMail({
                 from: '"Market Place" <no-reply@yourapp.com>',
                 to: user.email,
                 subject: "Registration Successful",
@@ -157,7 +166,7 @@ const register = async (req, res) => {
         }
         // Reset rate limit on successful registration
         if (rateLimitService_1.default.isConnected()) {
-            await rateLimitService_1.default.resetRateLimit(ip, "register");
+            yield rateLimitService_1.default.resetRateLimit(ip, "register");
         }
         res.status(201).json({
             status: "success",
@@ -171,24 +180,24 @@ const register = async (req, res) => {
     }
     catch (err) {
         if (rateLimitService_1.default.isConnected()) {
-            await rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "register", 3600);
+            yield rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "register", 3600);
         }
         console.error("Register error:", err);
         res
             .status(400)
             .json({ status: "error", message: err.message || "Registration failed" });
     }
-};
+});
 exports.register = register;
 /**
  * Login a user with enhanced security checks
  */
-const login = async (req, res) => {
+const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const ip = req.ip || "unknown"; // Fallback for undefined req.ip
         // Rate limit login attempts
         if (rateLimitService_1.default.isConnected() &&
-            (await rateLimitService_1.default.isRateLimited(ip, "login", 5, 900))) {
+            (yield rateLimitService_1.default.isRateLimited(ip, "login", 5, 900))) {
             res.status(429).json({
                 status: "error",
                 message: "Too many login attempts. Please try again later.",
@@ -200,7 +209,7 @@ const login = async (req, res) => {
         });
         if (error) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
             }
             res.status(400).json({
                 status: "error",
@@ -211,7 +220,7 @@ const login = async (req, res) => {
         const { identifier, password } = value;
         if (!identifier || !password) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
             }
             res
                 .status(400)
@@ -228,10 +237,10 @@ const login = async (req, res) => {
         const query = isEmail
             ? { email: sanitizedIdentifier }
             : { username: sanitizedIdentifier };
-        const user = (await user_model_1.default.findOne(query).select("+password"));
-        if (!user || !user.isActive || !(await user.comparePassword(password))) {
+        const user = (yield user_model_1.default.findOne(query).select("+password"));
+        if (!user || !user.isActive || !(yield user.comparePassword(password))) {
             if (rateLimitService_1.default.isConnected()) {
-                await rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
             }
             res.status(401).json({ status: "error", message: "Invalid credentials" });
             return;
@@ -239,23 +248,23 @@ const login = async (req, res) => {
         // Check for MFA (if enabled)
         if (user.mfaEnabled && user.verifyMfaCode) {
             const mfaCode = req.body.mfaCode || "";
-            if (!mfaCode || !(await user.verifyMfaCode(mfaCode))) {
+            if (!mfaCode || !(yield user.verifyMfaCode(mfaCode))) {
                 if (rateLimitService_1.default.isConnected()) {
-                    await rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
+                    yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
                 }
                 res.status(401).json({ status: "error", message: "Invalid MFA code" });
                 return;
             }
         }
         // Log IP address for security monitoring
-        await user.logLoginAttempt(ip, true);
+        yield user.logLoginAttempt(ip, true);
         // Invalidate previous sessions
-        await user.invalidateOtherSessions();
-        await user.updateLastLogin();
+        yield user.invalidateOtherSessions();
+        yield user.updateLastLogin();
         const token = signToken(user._id); // Convert _id to string
         // Reset rate limit on successful login
         if (rateLimitService_1.default.isConnected()) {
-            await rateLimitService_1.default.resetRateLimit(ip, "login");
+            yield rateLimitService_1.default.resetRateLimit(ip, "login");
         }
         res.status(200).json({
             status: "success",
@@ -270,19 +279,19 @@ const login = async (req, res) => {
     }
     catch (err) {
         if (rateLimitService_1.default.isConnected()) {
-            await rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "login", 900);
+            yield rateLimitService_1.default.incrementFailedAttempt(req.ip || "unknown", "login", 900);
         }
         console.error("Login error:", err);
         res
             .status(400)
             .json({ status: "error", message: err.message || "Login failed" });
     }
-};
+});
 exports.login = login;
 /**
  * Send a password reset email
  */
-const forgotPassword = async (req, res) => {
+const forgotPassword = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { error, value } = userValidation_1.forgotPasswordSchema.validate(req.body, {
             abortEarly: false,
@@ -295,7 +304,7 @@ const forgotPassword = async (req, res) => {
             return;
         }
         const { email } = value;
-        const user = (await user_model_1.default.findOne({ email }));
+        const user = (yield user_model_1.default.findOne({ email }));
         if (!user || !user.isActive) {
             res
                 .status(404)
@@ -303,13 +312,13 @@ const forgotPassword = async (req, res) => {
             return;
         }
         const resetToken = user.createPasswordResetToken();
-        await user.save({ validateBeforeSave: false });
+        yield user.save({ validateBeforeSave: false });
         const resetURL = `${APP_URL}/api/auth/reset-password/${resetToken}`;
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
         const message = (0, passwordResetTemplate_1.default)(resetURL, nameForTemplate);
         const transporter = createTransporter();
         try {
-            await transporter.sendMail({
+            yield transporter.sendMail({
                 from: '"Market Place" <no-reply@yourapp.com>',
                 to: user.email,
                 subject: "Password Reset Request",
@@ -333,12 +342,12 @@ const forgotPassword = async (req, res) => {
             .status(500)
             .json({ status: "error", message: "Failed to send reset email" });
     }
-};
+});
 exports.forgotPassword = forgotPassword;
 /**
  * Reset password using a token
  */
-const resetPassword = async (req, res) => {
+const resetPassword = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { error, value } = userValidation_1.resetPasswordSchema.validate(req.body, {
             abortEarly: false,
@@ -359,7 +368,7 @@ const resetPassword = async (req, res) => {
             .createHash("sha256")
             .update(tokenParam)
             .digest("hex");
-        const user = (await user_model_1.default.findOne({
+        const user = (yield user_model_1.default.findOne({
             passwordResetToken: hashedToken,
             passwordResetExpires: { $gt: Date.now() },
         }).select("+password"));
@@ -370,7 +379,7 @@ const resetPassword = async (req, res) => {
             return;
         }
         const { password } = value;
-        if (await (0, passwordCheckService_1.checkCompromisedPassword)(password)) {
+        if (yield (0, passwordCheckService_1.checkCompromisedPassword)(password)) {
             res.status(400).json({
                 status: "error",
                 message: "This password has been compromised in a data breach. Please choose a different password.",
@@ -380,7 +389,7 @@ const resetPassword = async (req, res) => {
         user.password = password;
         user.passwordResetToken = undefined;
         user.passwordResetExpires = undefined;
-        await user.save();
+        yield user.save();
         const token = signToken(user._id); // Convert _id to string
         res.status(200).json({
             status: "success",
@@ -401,5 +410,5 @@ const resetPassword = async (req, res) => {
             message: err.message || "Failed to reset password",
         });
     }
-};
+});
 exports.resetPassword = resetPassword;

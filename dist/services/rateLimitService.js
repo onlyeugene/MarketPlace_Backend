@@ -1,4 +1,13 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -31,41 +40,47 @@ class RateLimitService {
             console.log('Connected to Redis for rate limiting 🎉');
         });
     }
-    async isRateLimited(ip, action, maxAttempts, windowSeconds) {
-        const key = `rate_limit:${action}:${ip}`;
-        try {
-            const attempts = await this.redis.get(key);
-            const currentAttempts = attempts ? parseInt(attempts, 10) : 0;
-            if (currentAttempts >= maxAttempts) {
-                return true;
+    isRateLimited(ip, action, maxAttempts, windowSeconds) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const key = `rate_limit:${action}:${ip}`;
+            try {
+                const attempts = yield this.redis.get(key);
+                const currentAttempts = attempts ? parseInt(attempts, 10) : 0;
+                if (currentAttempts >= maxAttempts) {
+                    return true;
+                }
+                return false;
             }
-            return false;
-        }
-        catch (err) {
-            console.error(`Error checking rate limit for ${key}:`, err.message);
-            return false;
-        }
-    }
-    async incrementFailedAttempt(ip, action, windowSeconds = 900) {
-        const key = `rate_limit:${action}:${ip}`;
-        try {
-            const attempts = await this.redis.incr(key);
-            if (attempts === 1) {
-                await this.redis.expire(key, windowSeconds);
+            catch (err) {
+                console.error(`Error checking rate limit for ${key}:`, err.message);
+                return false;
             }
-        }
-        catch (err) {
-            console.error(`Error incrementing rate limit for ${key}:`, err.message);
-        }
+        });
     }
-    async resetRateLimit(ip, action) {
-        const key = `rate_limit:${action}:${ip}`;
-        try {
-            await this.redis.del(key);
-        }
-        catch (err) {
-            console.error(`Error resetting rate limit for ${key}:`, err.message);
-        }
+    incrementFailedAttempt(ip_1, action_1) {
+        return __awaiter(this, arguments, void 0, function* (ip, action, windowSeconds = 900) {
+            const key = `rate_limit:${action}:${ip}`;
+            try {
+                const attempts = yield this.redis.incr(key);
+                if (attempts === 1) {
+                    yield this.redis.expire(key, windowSeconds);
+                }
+            }
+            catch (err) {
+                console.error(`Error incrementing rate limit for ${key}:`, err.message);
+            }
+        });
+    }
+    resetRateLimit(ip, action) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const key = `rate_limit:${action}:${ip}`;
+            try {
+                yield this.redis.del(key);
+            }
+            catch (err) {
+                console.error(`Error resetting rate limit for ${key}:`, err.message);
+            }
+        });
     }
     isConnected() {
         return this.redis.status === 'ready';
