@@ -211,9 +211,7 @@ const refresh = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         if (user.isDeactivated) {
-            res
-                .status(403)
-                .json({
+            res.status(403).json({
                 status: "error",
                 message: "Account is deactivated. Please login to reactivate.",
             });
