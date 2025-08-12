@@ -6,6 +6,7 @@ import authRoutes from './routes/authRoutes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from './docs/authSwagger';
 import profileSwaggerDocument from './docs/profileSwaggerDocument';
+import combinedSwagger from './docs/combinedSwagger';
 
 // Initialize environment variables
 dotenv.config();
@@ -13,9 +14,8 @@ dotenv.config();
 // Create Express app
 const app: Express = express();
 
-// Serve Swagger documents on different routes
-app.use('/api-docs/auth', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-app.use('/api-docs/profile', swaggerUi.serve, swaggerUi.setup(profileSwaggerDocument));
+// Serve a single combined Swagger document
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(combinedSwagger));
 
 // Middleware
 app.use(cors());

@@ -1,4 +1,4 @@
-import Joi from 'joi';
+import Joi from "joi";
 
 const userSchema = Joi.object({
   username: Joi.string()
@@ -9,11 +9,12 @@ const userSchema = Joi.object({
     .pattern(/^[a-z0-9_]+$/)
     .required()
     .messages({
-      'string.base': 'Username must be a string',
-      'string.min': 'Username must be at least 3 characters long',
-      'string.max': 'Username cannot exceed 30 characters',
-      'string.pattern.base': 'Username can only contain lowercase letters, numbers, and underscores',
-      'any.required': 'Username is required',
+      "string.base": "Username must be a string",
+      "string.min": "Username must be at least 3 characters long",
+      "string.max": "Username cannot exceed 30 characters",
+      "string.pattern.base":
+        "Username can only contain lowercase letters, numbers, and underscores",
+      "any.required": "Username is required",
     }),
   firstname: Joi.string()
     .trim()
@@ -21,9 +22,10 @@ const userSchema = Joi.object({
     .pattern(/^[A-Za-z\s-]+$/)
     .required()
     .messages({
-      'string.max': 'First name cannot exceed 50 characters',
-      'string.pattern.base': 'First name can only contain letters, spaces, and hyphens',
-      'any.required': 'First name is required',
+      "string.max": "First name cannot exceed 50 characters",
+      "string.pattern.base":
+        "First name can only contain letters, spaces, and hyphens",
+      "any.required": "First name is required",
     }),
   lastname: Joi.string()
     .trim()
@@ -31,40 +33,30 @@ const userSchema = Joi.object({
     .pattern(/^[A-Za-z\s-]+$/)
     .required()
     .messages({
-      'string.max': 'Last name cannot exceed 50 characters',
-      'string.pattern.base': 'Last name can only contain letters, spaces, and hyphens',
-      'any.required': 'Last name is required',
+      "string.max": "Last name cannot exceed 50 characters",
+      "string.pattern.base":
+        "Last name can only contain letters, spaces, and hyphens",
+      "any.required": "Last name is required",
     }),
-  dob: Joi.date()
-    .less('now')
-    .required()
-    .messages({
-      'date.base': 'Date of birth must be a valid date',
-      'date.less': 'Date of birth cannot be in the future',
-      'any.required': 'Date of birth is required',
-    }),
-  email: Joi.string()
-    .trim()
-    .lowercase()
-    .email()
-    .required()
-    .messages({
-      'string.email': 'Please enter a valid email address',
-      'any.required': 'Email is required',
-    }),
-  password: Joi.string()
-    .min(8)
-    .required()
-    .messages({
-      'string.min': 'Password must be at least 8 characters long',
-      'any.required': 'Password is required',
-    }),
+  dob: Joi.date().less("now").required().messages({
+    "date.base": "Date of birth must be a valid date",
+    "date.less": "Date of birth cannot be in the future",
+    "any.required": "Date of birth is required",
+  }),
+  email: Joi.string().trim().lowercase().email().required().messages({
+    "string.email": "Please enter a valid email address",
+    "any.required": "Email is required",
+  }),
+  password: Joi.string().min(8).required().messages({
+    "string.min": "Password must be at least 8 characters long",
+    "any.required": "Password is required",
+  }),
   phone: Joi.string()
     .trim()
     .pattern(/^\+?[1-9]\d{1,14}$/)
     .allow(null)
     .messages({
-      'string.pattern.base': 'Please enter a valid phone number',
+      "string.pattern.base": "Please enter a valid phone number",
     }),
   address: Joi.object({
     street: Joi.string().trim().max(100).allow(null),
@@ -74,74 +66,119 @@ const userSchema = Joi.object({
     postalCode: Joi.string().trim().max(20).allow(null),
   }).default(null),
   role: Joi.string()
-    .valid('user', 'admin', 'moderator')
-    .default('user')
+    .valid("user", "admin", "moderator")
+    .default("user")
     .messages({
-      'any.only': 'Role must be one of: user, admin, moderator',
+      "any.only": "Role must be one of: user, admin, moderator",
     }),
 });
 
 const loginSchema = Joi.object({
   identifier: Joi.string().required().messages({
-    'any.required': 'Email or username is required',
+    "any.required": "Email or username is required",
   }),
   password: Joi.string().required().messages({
-    'any.required': 'Password is required',
+    "any.required": "Password is required",
   }),
 }).strict();
 
 const forgotPasswordSchema = Joi.object({
-  email: Joi.string()
-    .trim()
-    .lowercase()
-    .email()
-    .required()
-    .messages({
-      'string.email': 'Please enter a valid email address',
-      'any.required': 'Email is required',
-    }),
+  email: Joi.string().trim().lowercase().email().required().messages({
+    "string.email": "Please enter a valid email address",
+    "any.required": "Email is required",
+  }),
 });
 
 const resetPasswordSchema = Joi.object({
-  password: Joi.string()
-    .min(8)
-    .required()
-    .messages({
-      'string.min': 'Password must be at least 8 characters long',
-      'any.required': 'Password is required',
-    }),
+  password: Joi.string().min(8).required().messages({
+    "string.min": "Password must be at least 8 characters long",
+    "any.required": "Password is required",
+  }),
 });
 
 const updateUserDetailsSchema = Joi.object({
-  username: Joi.string().optional(),
-  email: Joi.string().email().optional(),
-  firstname: Joi.string().optional(),
-  lastname: Joi.string().optional(),
-}).or('username', 'email', 'firstname', 'lastname');
+  username: Joi.string()
+    .trim()
+    .lowercase()
+    .min(3)
+    .max(30)
+    .pattern(/^[a-z0-9_]+$/)
+    .messages({
+      "string.base": "Username must be a string",
+      "string.min": "Username must be at least 3 characters long",
+      "string.max": "Username cannot exceed 30 characters",
+      "string.pattern.base":
+        "Username can only contain lowercase letters, numbers, and underscores",
+    }),
+  firstname: Joi.string()
+    .trim()
+    .max(50)
+    .pattern(/^[A-Za-z\s-]+$/)
+    .messages({
+      "string.max": "First name cannot exceed 50 characters",
+      "string.pattern.base":
+        "First name can only contain letters, spaces, and hyphens",
+    }),
+  lastname: Joi.string()
+    .trim()
+    .max(50)
+    .pattern(/^[A-Za-z\s-]+$/)
+    .messages({
+      "string.max": "Last name cannot exceed 50 characters",
+      "string.pattern.base":
+        "Last name can only contain letters, spaces, and hyphens",
+    }),
+  dob: Joi.date().less("now").messages({
+    "date.base": "Date of birth must be a valid date",
+    "date.less": "Date of birth cannot be in the future",
+  }),
+  phone: Joi.string()
+    .trim()
+    .pattern(/^\+?[1-9]\d{1,14}$/)
+    .allow(null)
+    .messages({
+      "string.pattern.base": "Please enter a valid phone number",
+    }),
+  address: Joi.object({
+    street: Joi.string().trim().max(100).allow(null),
+    city: Joi.string().trim().max(50).allow(null),
+    state: Joi.string().trim().max(50).allow(null),
+    country: Joi.string().trim().max(50).allow(null),
+    postalCode: Joi.string().trim().max(20).allow(null),
+  }).allow(null),
+}).or("username", "firstname", "lastname", "dob", "phone", "address");
 
 const updatePasswordSchema = Joi.object({
   currentPassword: Joi.string().required().messages({
-    'any.required': 'Current password is required',
+    "any.required": "Current password is required",
   }),
   newPassword: Joi.string().required().min(8).messages({
-    'string.min': 'New password must be at least 8 characters long',
-    'any.required': 'New password is required',
+    "string.min": "New password must be at least 8 characters long",
+    "any.required": "New password is required",
   }),
 });
 
 const verifyOtpSchema = Joi.object({
   userId: Joi.string().required().messages({
-    'any.required': 'User ID is required',
+    "any.required": "User ID is required",
   }),
   otp: Joi.string().length(6).pattern(/^\d+$/).required().messages({
-    'string.length': 'OTP must be 6 digits',
-    'string.pattern.base': 'OTP must contain only digits',
-    'any.required': 'OTP is required',
+    "string.length": "OTP must be 6 digits",
+    "string.pattern.base": "OTP must contain only digits",
+    "any.required": "OTP is required",
   }),
-  type: Joi.string().valid('registration', 'email-update').required().messages({
-    'any.only': 'Type must be either "registration" or "email-update"',
-    'any.required': 'Type is required',
+  type: Joi.string().valid("registration", "email-update").required().messages({
+    "any.only": 'Type must be either "registration" or "email-update"',
+    "any.required": "Type is required",
   }),
 });
 
-export { userSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, updateUserDetailsSchema, updatePasswordSchema, verifyOtpSchema };
+export {
+  userSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  updateUserDetailsSchema,
+  updatePasswordSchema,
+  verifyOtpSchema,
+};

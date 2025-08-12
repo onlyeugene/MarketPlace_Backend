@@ -98,7 +98,12 @@ const userSchema = new mongoose_1.Schema({
         enum: ["user", "admin", "moderator"],
         default: "user",
     },
+    // Email/OTP verification status
     isActive: { type: Boolean, default: true },
+    // User-initiated deactivation state
+    isDeactivated: { type: Boolean, default: false },
+    deactivationReason: { type: String, default: undefined },
+    deactivatedAt: { type: Date, default: undefined },
     lastLogin: { type: Date, default: null },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
@@ -148,7 +153,10 @@ userSchema.methods.updateLastLogin = function () {
 };
 userSchema.methods.createPasswordResetToken = function () {
     const resetToken = crypto_1.default.randomBytes(32).toString("hex");
-    this.passwordResetToken = crypto_1.default.createHash("sha256").update(resetToken).digest("hex");
+    this.passwordResetToken = crypto_1.default
+        .createHash("sha256")
+        .update(resetToken)
+        .digest("hex");
     this.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000);
     return resetToken;
 };

@@ -54,7 +54,12 @@ const userSchema = new Schema<IUserDocument>(
       enum: ["user", "admin", "moderator"],
       default: "user",
     },
+    // Email/OTP verification status
     isActive: { type: Boolean, default: true },
+    // User-initiated deactivation state
+    isDeactivated: { type: Boolean, default: false },
+    deactivationReason: { type: String, default: undefined },
+    deactivatedAt: { type: Date, default: undefined },
     lastLogin: { type: Date, default: null },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
@@ -96,7 +101,9 @@ userSchema.pre(["updateOne", "findOneAndUpdate"], function (next) {
 });
 
 // Methods
-userSchema.methods.comparePassword = async function (candidatePassword: string) {
+userSchema.methods.comparePassword = async function (
+  candidatePassword: string
+) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
@@ -107,12 +114,18 @@ userSchema.methods.updateLastLogin = async function () {
 
 userSchema.methods.createPasswordResetToken = function () {
   const resetToken = crypto.randomBytes(32).toString("hex");
-  this.passwordResetToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+  this.passwordResetToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
   this.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000);
   return resetToken;
 };
 
-userSchema.methods.logLoginAttempt = async function (ip: string, success: boolean) {
+userSchema.methods.logLoginAttempt = async function (
+  ip: string,
+  success: boolean
+) {
   if (!this.loginAttempts) {
     this.loginAttempts = [];
   }
@@ -125,6 +138,9 @@ userSchema.methods.invalidateOtherSessions = async function () {
   await this.save();
 };
 
-const User = mongoose.model<IUserDocument, UserModel>("MarketPlaceUsers", userSchema);
+const User = mongoose.model<IUserDocument, UserModel>(
+  "MarketPlaceUsers",
+  userSchema
+);
 
 export default User;

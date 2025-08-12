@@ -22,6 +22,7 @@ import { checkDisposableEmail } from "../services/emailValidationService";
 import { checkCompromisedPassword } from "../services/passwordCheckService";
 import dotenv from "dotenv";
 import Joi from "joi";
+import refreshTokenService from "../services/refreshTokenService";
 
 // Extend Request type to include ip and user
 declare module "express" {
@@ -157,7 +158,9 @@ const register = async (req: Request, res: Response): Promise<void> => {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
       }
-      res.status(400).json({ status: "error", message: "Account already exists" });
+      res
+        .status(400)
+        .json({ status: "error", message: "Account already exists" });
       return;
     }
 
@@ -169,7 +172,7 @@ const register = async (req: Request, res: Response): Promise<void> => {
     await OTP.create({
       userId: user._id,
       code: otp,
-      type: 'registration',
+      type: "registration",
       expiresAt: otpExpires,
     });
 
@@ -187,7 +190,9 @@ const register = async (req: Request, res: Response): Promise<void> => {
       });
     } catch (emailErr: any) {
       console.error("Email sending failed:", emailErr.message);
-      await User.deleteOne({ _id: user._id }); // Rollback user creation
+      // Rollback: remove any created OTPs and the user record
+      await OTP.deleteMany({ userId: user._id, type: "registration" });
+      await User.deleteOne({ _id: user._id });
       res.status(500).json({ status: "error", message: "Failed to send OTP" });
       return;
     }
@@ -198,7 +203,8 @@ const register = async (req: Request, res: Response): Promise<void> => {
 
     res.status(201).json({
       status: "success",
-      message: "Registration successful, please verify OTP sent to your email",
+      message:
+        "Registration successful. OTP sent to your email. Please verify to activate your account.",
       data: {
         userId: user._id,
         username: user.username,
@@ -210,6 +216,53 @@ const register = async (req: Request, res: Response): Promise<void> => {
       await rateLimitService.incrementFailedAttempt(ip, "register", 3600);
     }
     console.error("Register error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
+/**
+ * Refresh access token using a refresh token
+ */
+const refresh = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { refreshToken } = req.body as { refreshToken?: string };
+    if (!refreshToken) {
+      res
+        .status(400)
+        .json({ status: "error", message: "refreshToken is required" });
+      return;
+    }
+    const rotated = await refreshTokenService.verifyAndRotate(refreshToken);
+    if (!rotated) {
+      res
+        .status(401)
+        .json({ status: "error", message: "Invalid or expired refresh token" });
+      return;
+    }
+
+    // Block refresh if user is deactivated
+    const user = await User.findById(rotated.userId);
+    if (!user) {
+      res.status(401).json({ status: "error", message: "Unauthorized" });
+      return;
+    }
+    if ((user as any).isDeactivated) {
+      res.status(403).json({
+        status: "error",
+        message: "Account is deactivated. Please login to reactivate.",
+      });
+      return;
+    }
+
+    const token = signToken(rotated.userId);
+    res.status(200).json({
+      status: "success",
+      token,
+      refreshToken: rotated.newRefreshToken,
+      refreshTokenExpiresAt: rotated.expiresAt,
+    });
+  } catch (err: any) {
+    console.error("Refresh error:", err);
     res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
@@ -233,7 +286,7 @@ const resendOtp = async (req: Request, res: Response): Promise<void> => {
 
     const { error, value } = Joi.object({
       userId: Joi.string().required(),
-      type: Joi.string().valid('registration', 'email-update').required(),
+      type: Joi.string().valid("registration", "email-update").required(),
     }).validate(req.body, { abortEarly: false });
     if (error) {
       if (rateLimitService.isConnected()) {
@@ -246,9 +299,12 @@ const resendOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { userId, type } = value as { userId: string; type: 'registration' | 'email-update' };
+    const { userId, type } = value as {
+      userId: string;
+      type: "registration" | "email-update";
+    };
 
-    const user = await User.findById(userId) as IUserDocument;
+    const user = (await User.findById(userId)) as IUserDocument;
     if (!user) {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "resendOtp", 3600);
@@ -258,7 +314,7 @@ const resendOtp = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Delete any existing OTP for this user and type
-    await OTP.deleteOne({ userId, type });
+    await OTP.deleteMany({ userId, type });
 
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
@@ -269,9 +325,14 @@ const resendOtp = async (req: Request, res: Response): Promise<void> => {
       expiresAt: otpExpires,
     });
 
-    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
-    const email = type === 'email-update' ? user.tempEmail || user.email : user.email;
-    const subject = type === 'registration' ? "Verify Your Registration" : "Verify Your New Email";
+    const nameForTemplate =
+      user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const email =
+      type === "email-update" ? user.tempEmail || user.email : user.email;
+    const subject =
+      type === "registration"
+        ? "Verify Your Registration"
+        : "Verify Your New Email";
     const message = otpTemplate(otp, nameForTemplate);
 
     const transporter = createTransporter();
@@ -284,7 +345,7 @@ const resendOtp = async (req: Request, res: Response): Promise<void> => {
       });
     } catch (emailErr: any) {
       console.error("Email sending failed:", emailErr.message);
-      await OTP.deleteOne({ userId: user._id, type });
+      await OTP.deleteMany({ userId: user._id, type });
       res.status(500).json({ status: "error", message: "Failed to send OTP" });
       return;
     }
@@ -324,7 +385,11 @@ const verifyOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { otp, userId, type } = value as { otp: string; userId: string; type: 'registration' | 'email-update' };
+    const { otp, userId, type } = value as {
+      otp: string;
+      userId: string;
+      type: "registration" | "email-update";
+    };
     const otpRecord = await OTP.findOne({
       userId,
       code: otp,
@@ -333,22 +398,25 @@ const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     });
 
     if (!otpRecord) {
-      res.status(400).json({ status: "error", message: "Invalid or expired OTP" });
+      res
+        .status(400)
+        .json({ status: "error", message: "Invalid or expired OTP" });
       return;
     }
 
-    const user = await User.findById(userId) as IUserDocument;
+    const user = (await User.findById(userId)) as IUserDocument;
     if (!user) {
       res.status(404).json({ status: "error", message: "User not found" });
       return;
     }
 
-    if (type === 'registration') {
+    if (type === "registration") {
       user.isActive = true;
       await user.save();
       const token = signToken(user._id as string);
 
-      const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+      const nameForTemplate =
+        user.fullName || `${user.firstname} ${user.lastname}`.trim();
       const message = registrationTemplate(nameForTemplate);
 
       const transporter = createTransporter();
@@ -375,7 +443,7 @@ const verifyOtp = async (req: Request, res: Response): Promise<void> => {
           fullName: user.fullName,
         },
       });
-    } else if (type === 'email-update') {
+    } else if (type === "email-update") {
       user.email = user.tempEmail || user.email;
       user.tempEmail = undefined;
       await user.save();
@@ -450,11 +518,13 @@ const updateEmail = async (req: Request, res: Response): Promise<void> => {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "updateEmail", 3600);
       }
-      res.status(400).json({ status: "error", message: "Email already in use" });
+      res
+        .status(400)
+        .json({ status: "error", message: "Email already in use" });
       return;
     }
 
-    const user = await User.findById(userId) as IUserDocument;
+    const user = (await User.findById(userId)) as IUserDocument;
     if (!user) {
       res.status(404).json({ status: "error", message: "User not found" });
       return;
@@ -468,11 +538,12 @@ const updateEmail = async (req: Request, res: Response): Promise<void> => {
     await OTP.create({
       userId: user._id,
       code: otp,
-      type: 'email-update',
+      type: "email-update",
       expiresAt: otpExpires,
     });
 
-    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const nameForTemplate =
+      user.fullName || `${user.firstname} ${user.lastname}`.trim();
     const message = otpTemplate(otp, nameForTemplate);
 
     const transporter = createTransporter();
@@ -485,7 +556,7 @@ const updateEmail = async (req: Request, res: Response): Promise<void> => {
       });
     } catch (emailErr: any) {
       console.error("Email sending failed:", emailErr.message);
-      await OTP.deleteOne({ userId: user._id, type: 'email-update' });
+      await OTP.deleteOne({ userId: user._id, type: "email-update" });
       user.tempEmail = undefined;
       await user.save();
       res.status(500).json({ status: "error", message: "Failed to send OTP" });
@@ -549,12 +620,10 @@ const login = async (req: Request, res: Response): Promise<void> => {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "login", 900);
       }
-      res
-        .status(400)
-        .json({
-          status: "error",
-          message: "Identifier and password are required",
-        });
+      res.status(400).json({
+        status: "error",
+        message: "Identifier and password are required",
+      });
       return;
     }
 
@@ -567,12 +636,36 @@ const login = async (req: Request, res: Response): Promise<void> => {
     const user = (await User.findOne(query).select(
       "+password"
     )) as IUserDocument | null;
-    if (!user || !user.isActive || !(await user.comparePassword(password))) {
+    if (!user) {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "login", 900);
       }
       res.status(401).json({ status: "error", message: "Invalid credentials" });
       return;
+    }
+
+    if (!(await user.comparePassword(password))) {
+      if (rateLimitService.isConnected()) {
+        await rateLimitService.incrementFailedAttempt(ip, "login", 900);
+      }
+      res.status(401).json({ status: "error", message: "Invalid credentials" });
+      return;
+    }
+
+    if (!user.isActive) {
+      res.status(403).json({
+        status: "error",
+        message: "Please verify your OTP before you can login",
+      });
+      return;
+    }
+
+    // If user previously deactivated account, reactivate on successful login
+    if (user.isDeactivated) {
+      user.isDeactivated = false;
+      user.deactivationReason = undefined;
+      user.deactivatedAt = undefined;
+      await user.save();
     }
 
     if (user.mfaEnabled && user.verifyMfaCode) {
@@ -590,6 +683,9 @@ const login = async (req: Request, res: Response): Promise<void> => {
     await user.invalidateOtherSessions();
     await user.updateLastLogin();
     const token = signToken(user._id as string);
+    const { refreshToken, expiresAt } = await refreshTokenService.issue(
+      String(user._id)
+    );
 
     if (rateLimitService.isConnected()) {
       await rateLimitService.resetRateLimit(ip, "login");
@@ -598,6 +694,8 @@ const login = async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({
       status: "success",
       token,
+      refreshToken,
+      refreshTokenExpiresAt: expiresAt,
       _id: user._id,
       data: {
         username: user.username,
@@ -643,7 +741,7 @@ const forgotPassword = async (req: Request, res: Response): Promise<void> => {
     const resetToken = user.createPasswordResetToken();
     await user.save({ validateBeforeSave: false });
 
-    const resetURL = `${APP_URL}/api/auth/reset-password/${resetToken}`;
+    const resetURL = `${APP_URL}/api/v1/auth/reset-password/${resetToken}`;
     const nameForTemplate =
       user.fullName || `${user.firstname} ${user.lastname}`.trim();
     const message = passwordResetTemplate(resetURL, nameForTemplate);
@@ -728,10 +826,17 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
     await user.save();
 
     const token = signToken(user._id as string);
+    // revoke all existing refresh tokens for security, and issue a fresh one
+    await refreshTokenService.revokeAllForUser(String(user._id));
+    const { refreshToken, expiresAt } = await refreshTokenService.issue(
+      String(user._id)
+    );
 
     res.status(200).json({
       status: "success",
       token,
+      refreshToken,
+      refreshTokenExpiresAt: expiresAt,
       data: {
         username: user.username,
         email: user.email,
@@ -773,7 +878,11 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
     });
     if (error) {
       if (rateLimitService.isConnected()) {
-        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+        await rateLimitService.incrementFailedAttempt(
+          ip,
+          "updatePassword",
+          3600
+        );
       }
       res.status(400).json({
         status: "error",
@@ -787,22 +896,35 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
       newPassword: string;
     };
 
-    const user = (await User.findById(userId).select("+password")) as IUserDocument;
+    const user = (await User.findById(userId).select(
+      "+password"
+    )) as IUserDocument;
     if (!user || !(await user.comparePassword(currentPassword))) {
       if (rateLimitService.isConnected()) {
-        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+        await rateLimitService.incrementFailedAttempt(
+          ip,
+          "updatePassword",
+          3600
+        );
       }
-      res.status(401).json({ status: "error", message: "Invalid current password" });
+      res
+        .status(401)
+        .json({ status: "error", message: "Invalid current password" });
       return;
     }
 
     if (await checkCompromisedPassword(newPassword)) {
       if (rateLimitService.isConnected()) {
-        await rateLimitService.incrementFailedAttempt(ip, "updatePassword", 3600);
+        await rateLimitService.incrementFailedAttempt(
+          ip,
+          "updatePassword",
+          3600
+        );
       }
       res.status(400).json({
         status: "error",
-        message: "This password has been compromised in a data breach. Please choose a different password.",
+        message:
+          "This password has been compromised in a data breach. Please choose a different password.",
       });
       return;
     }
@@ -810,7 +932,8 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
     user.password = newPassword;
     await user.save();
 
-    const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const nameForTemplate =
+      user.fullName || `${user.firstname} ${user.lastname}`.trim();
     const message = `Dear ${nameForTemplate},\n\nYour password has been successfully updated. If you did not request this change, please contact support immediately.\n\nBest,\nMarket Place Team`;
 
     const transporter = createTransporter();
@@ -842,4 +965,14 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export { register, login, forgotPassword, resetPassword, updatePassword, verifyOtp, updateEmail, resendOtp };
+export {
+  register,
+  login,
+  forgotPassword,
+  resetPassword,
+  updatePassword,
+  verifyOtp,
+  updateEmail,
+  resendOtp,
+  refresh,
+};

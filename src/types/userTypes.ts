@@ -1,10 +1,10 @@
-import { Document, Model } from 'mongoose';
+import { Document, Model } from "mongoose";
 
 export interface IUserBase {
   username: string;
   firstname: string;
   lastname: string;
-  tempEmail?: string
+  tempEmail?: string;
   dob?: Date;
   email: string;
   password: string;
@@ -16,8 +16,11 @@ export interface IUserBase {
     country?: string;
     postalCode?: string;
   };
-  role: 'user' | 'admin' | 'moderator';
+  role: "user" | "admin" | "moderator";
   isActive: boolean;
+  isDeactivated?: boolean;
+  deactivationReason?: string;
+  deactivatedAt?: Date;
   lastLogin?: Date;
   passwordResetToken?: string;
   passwordResetExpires?: Date;

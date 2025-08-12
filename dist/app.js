@@ -9,15 +9,13 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
 const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
-const authSwagger_1 = __importDefault(require("./docs/authSwagger"));
-const profileSwaggerDocument_1 = __importDefault(require("./docs/profileSwaggerDocument"));
+const combinedSwagger_1 = __importDefault(require("./docs/combinedSwagger"));
 // Initialize environment variables
 dotenv_1.default.config();
 // Create Express app
 const app = (0, express_1.default)();
-// Serve Swagger documents on different routes
-app.use('/api-docs/auth', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(authSwagger_1.default));
-app.use('/api-docs/profile', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(profileSwaggerDocument_1.default));
+// Serve a single combined Swagger document
+app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(combinedSwagger_1.default));
 // Middleware
 app.use((0, cors_1.default)());
 app.use((0, helmet_1.default)());

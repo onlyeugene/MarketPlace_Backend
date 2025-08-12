@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resendOtp = exports.updateEmail = exports.verifyOtp = exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
+exports.refresh = exports.resendOtp = exports.updateEmail = exports.verifyOtp = exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -28,6 +28,7 @@ const emailValidationService_1 = require("../services/emailValidationService");
 const passwordCheckService_1 = require("../services/passwordCheckService");
 const dotenv_1 = __importDefault(require("dotenv"));
 const joi_1 = __importDefault(require("joi"));
+const refreshTokenService_1 = __importDefault(require("../services/refreshTokenService"));
 dotenv_1.default.config();
 function isStringValue(value) {
     return /^\d+(ms|s|m|h|d|w|y)$/.test(value);
@@ -128,7 +129,9 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "register", 3600);
             }
-            res.status(400).json({ status: "error", message: "Account already exists" });
+            res
+                .status(400)
+                .json({ status: "error", message: "Account already exists" });
             return;
         }
         const user = new user_model_1.default(Object.assign(Object.assign({}, value), { isActive: false })); // Set isActive to false until OTP verified
@@ -138,7 +141,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         yield otp_models_1.default.create({
             userId: user._id,
             code: otp,
-            type: 'registration',
+            type: "registration",
             expiresAt: otpExpires,
         });
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
@@ -154,7 +157,9 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         catch (emailErr) {
             console.error("Email sending failed:", emailErr.message);
-            yield user_model_1.default.deleteOne({ _id: user._id }); // Rollback user creation
+            // Rollback: remove any created OTPs and the user record
+            yield otp_models_1.default.deleteMany({ userId: user._id, type: "registration" });
+            yield user_model_1.default.deleteOne({ _id: user._id });
             res.status(500).json({ status: "error", message: "Failed to send OTP" });
             return;
         }
@@ -163,7 +168,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         res.status(201).json({
             status: "success",
-            message: "Registration successful, please verify OTP sent to your email",
+            message: "Registration successful. OTP sent to your email. Please verify to activate your account.",
             data: {
                 userId: user._id,
                 username: user.username,
@@ -181,6 +186,54 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.register = register;
 /**
+ * Refresh access token using a refresh token
+ */
+const refresh = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) {
+            res
+                .status(400)
+                .json({ status: "error", message: "refreshToken is required" });
+            return;
+        }
+        const rotated = yield refreshTokenService_1.default.verifyAndRotate(refreshToken);
+        if (!rotated) {
+            res
+                .status(401)
+                .json({ status: "error", message: "Invalid or expired refresh token" });
+            return;
+        }
+        // Block refresh if user is deactivated
+        const user = yield user_model_1.default.findById(rotated.userId);
+        if (!user) {
+            res.status(401).json({ status: "error", message: "Unauthorized" });
+            return;
+        }
+        if (user.isDeactivated) {
+            res
+                .status(403)
+                .json({
+                status: "error",
+                message: "Account is deactivated. Please login to reactivate.",
+            });
+            return;
+        }
+        const token = signToken(rotated.userId);
+        res.status(200).json({
+            status: "success",
+            token,
+            refreshToken: rotated.newRefreshToken,
+            refreshTokenExpiresAt: rotated.expiresAt,
+        });
+    }
+    catch (err) {
+        console.error("Refresh error:", err);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+exports.refresh = refresh;
+/**
  * Resend OTP for registration or email update
  */
 const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -196,7 +249,7 @@ const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         const { error, value } = joi_1.default.object({
             userId: joi_1.default.string().required(),
-            type: joi_1.default.string().valid('registration', 'email-update').required(),
+            type: joi_1.default.string().valid("registration", "email-update").required(),
         }).validate(req.body, { abortEarly: false });
         if (error) {
             if (rateLimitService_1.default.isConnected()) {
@@ -209,7 +262,7 @@ const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         const { userId, type } = value;
-        const user = yield user_model_1.default.findById(userId);
+        const user = (yield user_model_1.default.findById(userId));
         if (!user) {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "resendOtp", 3600);
@@ -218,7 +271,7 @@ const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         // Delete any existing OTP for this user and type
-        yield otp_models_1.default.deleteOne({ userId, type });
+        yield otp_models_1.default.deleteMany({ userId, type });
         const otp = generateOTP();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
         yield otp_models_1.default.create({
@@ -228,8 +281,10 @@ const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             expiresAt: otpExpires,
         });
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
-        const email = type === 'email-update' ? user.tempEmail || user.email : user.email;
-        const subject = type === 'registration' ? "Verify Your Registration" : "Verify Your New Email";
+        const email = type === "email-update" ? user.tempEmail || user.email : user.email;
+        const subject = type === "registration"
+            ? "Verify Your Registration"
+            : "Verify Your New Email";
         const message = (0, otpTemplate_1.default)(otp, nameForTemplate);
         const transporter = createTransporter();
         try {
@@ -242,7 +297,7 @@ const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         catch (emailErr) {
             console.error("Email sending failed:", emailErr.message);
-            yield otp_models_1.default.deleteOne({ userId: user._id, type });
+            yield otp_models_1.default.deleteMany({ userId: user._id, type });
             res.status(500).json({ status: "error", message: "Failed to send OTP" });
             return;
         }
@@ -288,15 +343,17 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             expiresAt: { $gt: Date.now() },
         });
         if (!otpRecord) {
-            res.status(400).json({ status: "error", message: "Invalid or expired OTP" });
+            res
+                .status(400)
+                .json({ status: "error", message: "Invalid or expired OTP" });
             return;
         }
-        const user = yield user_model_1.default.findById(userId);
+        const user = (yield user_model_1.default.findById(userId));
         if (!user) {
             res.status(404).json({ status: "error", message: "User not found" });
             return;
         }
-        if (type === 'registration') {
+        if (type === "registration") {
             user.isActive = true;
             yield user.save();
             const token = signToken(user._id);
@@ -326,7 +383,7 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 },
             });
         }
-        else if (type === 'email-update') {
+        else if (type === "email-update") {
             user.email = user.tempEmail || user.email;
             user.tempEmail = undefined;
             yield user.save();
@@ -396,10 +453,12 @@ const updateEmail = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "updateEmail", 3600);
             }
-            res.status(400).json({ status: "error", message: "Email already in use" });
+            res
+                .status(400)
+                .json({ status: "error", message: "Email already in use" });
             return;
         }
-        const user = yield user_model_1.default.findById(userId);
+        const user = (yield user_model_1.default.findById(userId));
         if (!user) {
             res.status(404).json({ status: "error", message: "User not found" });
             return;
@@ -411,7 +470,7 @@ const updateEmail = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         yield otp_models_1.default.create({
             userId: user._id,
             code: otp,
-            type: 'email-update',
+            type: "email-update",
             expiresAt: otpExpires,
         });
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
@@ -427,7 +486,7 @@ const updateEmail = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         }
         catch (emailErr) {
             console.error("Email sending failed:", emailErr.message);
-            yield otp_models_1.default.deleteOne({ userId: user._id, type: 'email-update' });
+            yield otp_models_1.default.deleteOne({ userId: user._id, type: "email-update" });
             user.tempEmail = undefined;
             yield user.save();
             res.status(500).json({ status: "error", message: "Failed to send OTP" });
@@ -483,9 +542,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
             }
-            res
-                .status(400)
-                .json({
+            res.status(400).json({
                 status: "error",
                 message: "Identifier and password are required",
             });
@@ -497,12 +554,33 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             ? { email: sanitizedIdentifier }
             : { username: sanitizedIdentifier };
         const user = (yield user_model_1.default.findOne(query).select("+password"));
-        if (!user || !user.isActive || !(yield user.comparePassword(password))) {
+        if (!user) {
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
             }
             res.status(401).json({ status: "error", message: "Invalid credentials" });
             return;
+        }
+        if (!(yield user.comparePassword(password))) {
+            if (rateLimitService_1.default.isConnected()) {
+                yield rateLimitService_1.default.incrementFailedAttempt(ip, "login", 900);
+            }
+            res.status(401).json({ status: "error", message: "Invalid credentials" });
+            return;
+        }
+        if (!user.isActive) {
+            res.status(403).json({
+                status: "error",
+                message: "Please verify your OTP before you can login",
+            });
+            return;
+        }
+        // If user previously deactivated account, reactivate on successful login
+        if (user.isDeactivated) {
+            user.isDeactivated = false;
+            user.deactivationReason = undefined;
+            user.deactivatedAt = undefined;
+            yield user.save();
         }
         if (user.mfaEnabled && user.verifyMfaCode) {
             const mfaCode = req.body.mfaCode || "";
@@ -518,12 +596,15 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         yield user.invalidateOtherSessions();
         yield user.updateLastLogin();
         const token = signToken(user._id);
+        const { refreshToken, expiresAt } = yield refreshTokenService_1.default.issue(String(user._id));
         if (rateLimitService_1.default.isConnected()) {
             yield rateLimitService_1.default.resetRateLimit(ip, "login");
         }
         res.status(200).json({
             status: "success",
             token,
+            refreshToken,
+            refreshTokenExpiresAt: expiresAt,
             _id: user._id,
             data: {
                 username: user.username,
@@ -567,7 +648,7 @@ const forgotPassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         const resetToken = user.createPasswordResetToken();
         yield user.save({ validateBeforeSave: false });
-        const resetURL = `${APP_URL}/api/auth/reset-password/${resetToken}`;
+        const resetURL = `${APP_URL}/api/v1/auth/reset-password/${resetToken}`;
         const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
         const message = (0, passwordResetTemplate_1.default)(resetURL, nameForTemplate);
         const transporter = createTransporter();
@@ -643,9 +724,14 @@ const resetPassword = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         user.passwordResetExpires = undefined;
         yield user.save();
         const token = signToken(user._id);
+        // revoke all existing refresh tokens for security, and issue a fresh one
+        yield refreshTokenService_1.default.revokeAllForUser(String(user._id));
+        const { refreshToken, expiresAt } = yield refreshTokenService_1.default.issue(String(user._id));
         res.status(200).json({
             status: "success",
             token,
+            refreshToken,
+            refreshTokenExpiresAt: expiresAt,
             data: {
                 username: user.username,
                 email: user.email,
@@ -698,7 +784,9 @@ const updatePassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
             if (rateLimitService_1.default.isConnected()) {
                 yield rateLimitService_1.default.incrementFailedAttempt(ip, "updatePassword", 3600);
             }
-            res.status(401).json({ status: "error", message: "Invalid current password" });
+            res
+                .status(401)
+                .json({ status: "error", message: "Invalid current password" });
             return;
         }
         if (yield (0, passwordCheckService_1.checkCompromisedPassword)(newPassword)) {
