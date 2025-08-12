@@ -10,6 +10,7 @@ import {
   verifyOtp,
   resendOtp,
   refresh,
+  logout,
 } from "../controllers/authController";
 import { authenticateToken } from "../middleware/authMiddleware";
 import {
@@ -157,6 +158,17 @@ router.delete(
   authenticateToken,
   sensitiveActionLimiter,
   deleteAccount
+);
+/**
+ * @route POST /logout
+ * @desc Logout user by revoking refresh token
+ * @access Private
+ */
+router.post(
+  "/logout",
+  authenticateToken,
+  sensitiveActionLimiter,
+  logout
 );
 
 export default router;

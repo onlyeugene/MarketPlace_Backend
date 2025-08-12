@@ -788,6 +788,126 @@ const swaggerDocument = {
                 },
             },
         },
+        "/api/v1/auth/logout": {
+            post: {
+                summary: "Log out a user",
+                description: "Logs out the authenticated user by revoking a single refresh token or all refresh tokens.",
+                tags: ["Authentication"],
+                security: [{ bearerAuth: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    refreshToken: {
+                                        type: "string",
+                                        description: "The refresh token to revoke (optional if revokeAll is true).",
+                                        example: "abc123def456...",
+                                        nullable: true,
+                                    },
+                                    revokeAll: {
+                                        type: "boolean",
+                                        description: "Set to true to revoke all refresh tokens for the user.",
+                                        example: false,
+                                        nullable: true,
+                                    },
+                                },
+                                anyOf: [
+                                    { required: ["refreshToken"] },
+                                    { required: ["revokeAll"] },
+                                ],
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "200": {
+                        description: "User logged out successfully.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        status: { type: "string", example: "success" },
+                                        message: {
+                                            type: "string",
+                                            example: "Logged out successfully",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": {
+                        description: "Missing refreshToken or revokeAll.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        status: { type: "string", example: "error" },
+                                        message: {
+                                            type: "string",
+                                            example: "refreshToken or revokeAll required",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "401": {
+                        description: "Unauthorized.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        status: { type: "string", example: "error" },
+                                        message: { type: "string", example: "Unauthorized" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "429": {
+                        description: "Too many logout attempts.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        status: { type: "string", example: "error" },
+                                        message: {
+                                            type: "string",
+                                            example: "Too many logout attempts. Try again later.",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "500": {
+                        description: "Internal server error.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        status: { type: "string", example: "error" },
+                                        message: {
+                                            type: "string",
+                                            example: "Internal server error",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
         "/api/v1/auth/deactivate": {
             post: {
                 summary: "Deactivate account",

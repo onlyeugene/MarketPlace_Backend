@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.refresh = exports.resendOtp = exports.updateEmail = exports.verifyOtp = exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
+exports.logout = exports.refresh = exports.resendOtp = exports.updateEmail = exports.verifyOtp = exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.login = exports.register = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -830,3 +830,78 @@ const updatePassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.updatePassword = updatePassword;
+/**
+ * Log out a user by revoking their refresh token(s)
+ */
+const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    let ip = req.ip || "unknown";
+    try {
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+        if (!userId) {
+            res.status(401).json({ status: "error", message: "Unauthorized" });
+            return;
+        }
+        if (rateLimitService_1.default.isConnected() &&
+            (yield rateLimitService_1.default.isRateLimited(ip, "logout", 5, 900))) {
+            res.status(429).json({
+                status: "error",
+                message: "Too many logout attempts. Try again later.",
+            });
+            return;
+        }
+        const { refreshToken, revokeAll } = req.body;
+        const user = yield user_model_1.default.findById(userId);
+        if (!user) {
+            res.status(404).json({ status: "error", message: "User not found" });
+            return;
+        }
+        if (revokeAll) {
+            // Revoke all refresh tokens for the user
+            yield refreshTokenService_1.default.revokeAllForUser(userId);
+        }
+        else if (refreshToken) {
+            // Revoke a single refresh token
+            yield refreshTokenService_1.default.revoke(refreshToken);
+        }
+        else {
+            res
+                .status(400)
+                .json({ status: "error", message: "refreshToken or revokeAll required" });
+            return;
+        }
+        if (rateLimitService_1.default.isConnected()) {
+            yield rateLimitService_1.default.resetRateLimit(ip, "logout");
+        }
+        // Optional: Send confirmation email
+        const nameForTemplate = user.fullName || `${user.firstname} ${user.lastname}`.trim();
+        const message = `Dear ${nameForTemplate},\n\nYou have successfully logged out. If this was not you, please contact support immediately.\n\nBest,\nMarket Place Team`;
+        const transporter = createTransporter();
+        try {
+            yield transporter.sendMail({
+                from: '"Market Place" <no-reply@yourapp.com>',
+                to: user.email,
+                subject: "Logout Confirmation",
+                text: message,
+            });
+        }
+        catch (emailErr) {
+            console.error("Email sending failed:", emailErr.message);
+            // Note: We don't fail the logout if email fails, as it's not critical
+        }
+        res.status(200).json({
+            status: "success",
+            message: revokeAll
+                ? "Logged out from all sessions"
+                : "Logged out successfully",
+        });
+    }
+    catch (err) {
+        if (rateLimitService_1.default.isConnected()) {
+            yield rateLimitService_1.default.incrementFailedAttempt(ip, "logout", 900);
+        }
+        console.error("Logout error:", err);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+exports.logout = logout;

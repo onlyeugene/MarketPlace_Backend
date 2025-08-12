@@ -1,6 +1,7 @@
 import { OpenApiSpec } from "@loopback/openapi-v3-types";
 import authSwagger from "./authSwagger";
 import profileSwaggerDocument from "./profileSwaggerDocument";
+import adminSwaggerDocument from "./adminSwaggerDocument";
 
 function dedupeBy<T, K extends keyof any>(
   items: T[],
@@ -24,9 +25,9 @@ const combinedSwagger: OpenApiSpec = {
     title: "Marketplace API",
     version: "1.0.0",
     description:
-      "Combined API documentation for Authentication and Profile management.",
+      "Combined API documentation for Authentication, Profile management and Admin functionalities.",
   },
-  servers: authSwagger.servers || profileSwaggerDocument.servers,
+  servers: authSwagger.servers || profileSwaggerDocument.servers || adminSwaggerDocument.servers,
   tags: dedupeBy(
     [...(authSwagger.tags || []), ...(profileSwaggerDocument.tags || [])],
     // @ts-ignore – OpenAPI Tag Object has a name field
@@ -35,11 +36,13 @@ const combinedSwagger: OpenApiSpec = {
   paths: {
     ...(authSwagger.paths || {}),
     ...(profileSwaggerDocument.paths || {}),
+    ...(adminSwaggerDocument.paths || {}),
   },
   components: {
     securitySchemes: {
       ...(profileSwaggerDocument.components?.securitySchemes || {}),
       ...(authSwagger.components?.securitySchemes || {}),
+        ...(adminSwaggerDocument.components?.securitySchemes || {}),
     },
   },
 };

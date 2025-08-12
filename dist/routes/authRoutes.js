@@ -115,4 +115,10 @@ router.post("/deactivate", authMiddleware_1.authenticateToken, authLimiter, prof
  * @access Private
  */
 router.delete("/delete-account", authMiddleware_1.authenticateToken, sensitiveActionLimiter, profileUpdateController_1.deleteAccount);
+/**
+ * @route POST /logout
+ * @desc Logout user by revoking refresh token
+ * @access Private
+ */
+router.post("/logout", authMiddleware_1.authenticateToken, sensitiveActionLimiter, authController_1.logout);
 exports.default = router;

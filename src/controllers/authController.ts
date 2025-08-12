@@ -965,6 +965,90 @@ const updatePassword = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+/**
+ * Log out a user by revoking their refresh token(s)
+ */
+const logout = async (req: Request, res: Response): Promise<void> => {
+  let ip = req.ip || "unknown";
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ status: "error", message: "Unauthorized" });
+      return;
+    }
+
+    if (
+      rateLimitService.isConnected() &&
+      (await rateLimitService.isRateLimited(ip, "logout", 5, 900))
+    ) {
+      res.status(429).json({
+        status: "error",
+        message: "Too many logout attempts. Try again later.",
+      });
+      return;
+    }
+
+    const { refreshToken, revokeAll } = req.body as {
+      refreshToken?: string;
+      revokeAll?: boolean;
+    };
+
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ status: "error", message: "User not found" });
+      return;
+    }
+
+    if (revokeAll) {
+      // Revoke all refresh tokens for the user
+      await refreshTokenService.revokeAllForUser(userId);
+    } else if (refreshToken) {
+      // Revoke a single refresh token
+      await refreshTokenService.revoke(refreshToken);
+    } else {
+      res
+        .status(400)
+        .json({ status: "error", message: "refreshToken or revokeAll required" });
+      return;
+    }
+
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.resetRateLimit(ip, "logout");
+    }
+
+    // Optional: Send confirmation email
+    const nameForTemplate =
+      user.fullName || `${user.firstname} ${user.lastname}`.trim();
+    const message = `Dear ${nameForTemplate},\n\nYou have successfully logged out. If this was not you, please contact support immediately.\n\nBest,\nMarket Place Team`;
+
+    const transporter = createTransporter();
+    try {
+      await transporter.sendMail({
+        from: '"Market Place" <no-reply@yourapp.com>',
+        to: user.email,
+        subject: "Logout Confirmation",
+        text: message,
+      });
+    } catch (emailErr: any) {
+      console.error("Email sending failed:", emailErr.message);
+      // Note: We don't fail the logout if email fails, as it's not critical
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: revokeAll
+        ? "Logged out from all sessions"
+        : "Logged out successfully",
+    });
+  } catch (err: any) {
+    if (rateLimitService.isConnected()) {
+      await rateLimitService.incrementFailedAttempt(ip, "logout", 900);
+    }
+    console.error("Logout error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+};
+
 export {
   register,
   login,
@@ -975,4 +1059,5 @@ export {
   updateEmail,
   resendOtp,
   refresh,
+  logout
 };
