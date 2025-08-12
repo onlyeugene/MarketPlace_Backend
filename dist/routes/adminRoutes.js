@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const adminAuthController_1 = require("../controllers/adminAuthController");
-const adminMiddleware_1 = require("../middleware/adminMiddleware"); // Assuming you create this middleware
+const adminMiddleware_1 = require("../middleware/adminMiddleware");
 const router = express_1.default.Router();
 // Rate limiting for admin routes
 const adminLimiter = (0, express_rate_limit_1.default)({
@@ -21,25 +21,31 @@ const sensitiveAdminLimiter = (0, express_rate_limit_1.default)({
     message: { status: "error", message: "Too many attempts, please try again later" },
 });
 /**
- * @route POST /admin/login
+ * @route POST /api/v1/admin/register
+ * @desc Register a new admin
+ * @access Private (Admin)
+ */
+router.post("/admin/register", adminMiddleware_1.authenticateAdminToken, sensitiveAdminLimiter, adminAuthController_1.registerAdmin);
+/**
+ * @route POST /api/v1/admin/login
  * @desc Authenticate an admin and issue a JWT token
  * @access Public
  */
 router.post("/admin/login", adminLimiter, adminAuthController_1.adminLogin);
 /**
- * @route GET /admin/users
+ * @route GET /api/v1/admin/users
  * @desc Get all users
  * @access Private (Admin)
  */
 router.get("/admin/users", adminMiddleware_1.authenticateAdminToken, sensitiveAdminLimiter, adminAuthController_1.getAllUsers);
 /**
- * @route GET /admin/users/:id
+ * @route GET /api/v1/admin/users/:id
  * @desc Get a user by ID
  * @access Private (Admin)
  */
 router.get("/admin/users/:id", adminMiddleware_1.authenticateAdminToken, sensitiveAdminLimiter, adminAuthController_1.getUserById);
 /**
- * @route DELETE /admin/users/:id
+ * @route DELETE /api/v1/admin/users/:id
  * @desc Delete a user by ID
  * @access Private (Admin)
  */

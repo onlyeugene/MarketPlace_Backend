@@ -1,7 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { IUserDocument } from "../types/userTypes"; // Reuse IUserDocument for simplicity, or define IAdminDocument if needed
+import { IUserDocument } from "../types/userTypes"; // Reuse IUserDocument for simplicity
 
 const adminSchema = new Schema<IUserDocument>(
   {

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyOtpSchema = exports.updatePasswordSchema = exports.updateUserDetailsSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.loginSchema = exports.userSchema = void 0;
+exports.adminRegisterSchema = exports.verifyOtpSchema = exports.updatePasswordSchema = exports.updateUserDetailsSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.loginSchema = exports.userSchema = void 0;
 const joi_1 = __importDefault(require("joi"));
 const userSchema = joi_1.default.object({
     username: joi_1.default.string()
@@ -172,3 +172,54 @@ const verifyOtpSchema = joi_1.default.object({
     }),
 });
 exports.verifyOtpSchema = verifyOtpSchema;
+const adminRegisterSchema = joi_1.default.object({
+    username: joi_1.default.string()
+        .trim()
+        .lowercase()
+        .min(3)
+        .max(30)
+        .pattern(/^[a-z0-9_]+$/)
+        .required()
+        .messages({
+        "string.base": "Username must be a string",
+        "string.min": "Username must be at least 3 characters long",
+        "string.max": "Username cannot exceed 30 characters",
+        "string.pattern.base": "Username can only contain lowercase letters, numbers, and underscores",
+        "any.required": "Username is required",
+    }),
+    firstname: joi_1.default.string()
+        .trim()
+        .max(50)
+        .pattern(/^[A-Za-z\s-]+$/)
+        .required()
+        .messages({
+        "string.max": "First name cannot exceed 50 characters",
+        "string.pattern.base": "First name can only contain letters, spaces, and hyphens",
+        "any.required": "First name is required",
+    }),
+    lastname: joi_1.default.string()
+        .trim()
+        .max(50)
+        .pattern(/^[A-Za-z\s-]+$/)
+        .required()
+        .messages({
+        "string.max": "Last name cannot exceed 50 characters",
+        "string.pattern.base": "Last name can only contain letters, spaces, and hyphens",
+        "any.required": "Last name is required",
+    }),
+    email: joi_1.default.string().trim().lowercase().email().required().messages({
+        "string.email": "Please enter a valid email address",
+        "any.required": "Email is required",
+    }),
+    password: joi_1.default.string().min(8).required().messages({
+        "string.min": "Password must be at least 8 characters long",
+        "any.required": "Password is required",
+    }),
+    role: joi_1.default.string()
+        .valid("admin", "moderator")
+        .default("admin")
+        .messages({
+        "any.only": "Role must be one of: admin, moderator",
+    }),
+});
+exports.adminRegisterSchema = adminRegisterSchema;

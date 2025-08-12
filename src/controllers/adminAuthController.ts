@@ -3,10 +3,12 @@ import Admin from "../models/admin-model";
 import User from "../models/user-model";
 import sanitizeHtml from "sanitize-html";
 import rateLimitService from "../services/rateLimitService";
-import { loginSchema } from "../validations/userValidation";
+import {
+  loginSchema,
+  adminRegisterSchema,
+} from "../validations/userValidation";
 import jwt, { SignOptions } from "jsonwebtoken";
 import dotenv from "dotenv";
-import { IUserDocument } from "../types/userTypes";
 
 dotenv.config();
 
@@ -18,7 +20,6 @@ function isStringValue(value: string): value is StringValue {
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
-// const APP_URL = process.env.APP_URL || "http://localhost:9540";
 
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET is not defined in environment variables");
@@ -33,6 +34,81 @@ const signToken = (id: string): string => {
     expiresIn: JWT_EXPIRES_IN as StringValue,
   };
   return jwt.sign({ id }, JWT_SECRET, options);
+};
+
+const registerAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { error, value } = adminRegisterSchema.validate(req.body, {
+      abortEarly: false,
+    });
+    if (error) {
+      res.status(400).json({
+        status: "error",
+        message: error.details.map((detail) => detail.message),
+      });
+      return;
+    }
+
+    const { username, firstname, lastname, email, password, role } = value;
+
+    // Check for existing admin with same username or email
+    const existingAdmin = await Admin.findOne({
+      $or: [
+        { username: sanitizeHtml(username) },
+        { email: sanitizeHtml(email) },
+      ],
+    });
+    if (existingAdmin) {
+      res.status(400).json({
+        status: "error",
+        message: "Username or email already in use",
+      });
+      return;
+    }
+
+    // Check for existing user with same username or email to avoid conflicts
+    const existingUser = await User.findOne({
+      $or: [
+        { username: sanitizeHtml(username) },
+        { email: sanitizeHtml(email) },
+      ],
+    });
+    if (existingUser) {
+      res.status(400).json({
+        status: "error",
+        message: "Username or email already in use by a user",
+      });
+      return;
+    }
+
+    const admin = new Admin({
+      username: sanitizeHtml(username),
+      firstname: sanitizeHtml(firstname),
+      lastname: sanitizeHtml(lastname),
+      email: sanitizeHtml(email),
+      password,
+      role: role || "admin",
+      isActive: true,
+    });
+
+    await admin.save();
+
+    const token = signToken(admin._id as string);
+
+    res.status(201).json({
+      status: "success",
+      token,
+      data: {
+        username: admin.username,
+        email: admin.email,
+        fullName: admin.fullName,
+        role: admin.role,
+      },
+    });
+  } catch (err: any) {
+    console.error("Admin Register error:", err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
 };
 
 const adminLogin = async (req: Request, res: Response): Promise<void> => {
@@ -71,12 +147,10 @@ const adminLogin = async (req: Request, res: Response): Promise<void> => {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "adminLogin", 900);
       }
-      res
-        .status(400)
-        .json({
-          status: "error",
-          message: "Identifier and password are required",
-        });
+      res.status(400).json({
+        status: "error",
+        message: "Identifier and password are required",
+      });
       return;
     }
 
@@ -86,9 +160,8 @@ const adminLogin = async (req: Request, res: Response): Promise<void> => {
     const query = isEmail
       ? { email: sanitizedIdentifier }
       : { username: sanitizedIdentifier };
-    const admin = (await Admin.findOne(query).select(
-      "+password"
-    )) as IUserDocument | null;
+    const admin = await Admin.findOne(query).select("+password");
+
     if (!admin || !admin.isActive || !(await admin.comparePassword(password))) {
       if (rateLimitService.isConnected()) {
         await rateLimitService.incrementFailedAttempt(ip, "adminLogin", 900);
@@ -127,10 +200,30 @@ const adminLogin = async (req: Request, res: Response): Promise<void> => {
 
 const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const users = await User.find({});
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    if (page < 1 || limit < 1) {
+      res.status(400).json({
+        status: "error",
+        message: "Page and limit must be positive integers",
+      });
+      return;
+    }
+
+    const totalCount = await User.countDocuments();
+    const users = await User.find({})
+      .skip(skip)
+      .limit(limit)
+      .select("username email fullName dob role isActive lastLogin");
+
     res.status(200).json({
       status: "success",
-      results: users.length,
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit),
       data: { users },
     });
   } catch (err: any) {
@@ -141,13 +234,31 @@ const getAllUsers = async (req: Request, res: Response): Promise<void> => {
 
 const getUserById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = await User.findById(req.params.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 1;
+
+    if (page < 1 || limit < 1) {
+      res.status(400).json({
+        status: "error",
+        message: "Page and limit must be positive integers",
+      });
+      return;
+    }
+
+    const user = await User.findById(req.params.id).select(
+      "username email fullName dob role isActive lastLogin"
+    );
     if (!user) {
       res.status(404).json({ status: "error", message: "User not found" });
       return;
     }
+
     res.status(200).json({
       status: "success",
+      totalCount: 1,
+      page,
+      limit,
+      totalPages: 1,
       data: { user },
     });
   } catch (err: any) {
@@ -173,4 +284,4 @@ const deleteUser = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export { adminLogin, getAllUsers, getUserById, deleteUser };
+export { registerAdmin, adminLogin, getAllUsers, getUserById, deleteUser };

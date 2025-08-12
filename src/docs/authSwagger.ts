@@ -10,7 +10,7 @@ const swaggerDocument: OpenApiSpec = {
   },
   servers: [
     {
-      url: "http://localhost:9540",
+      url: "http://localhost:9550",
       description: "Local development server",
     },
   ],

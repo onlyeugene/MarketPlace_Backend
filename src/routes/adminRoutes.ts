@@ -1,7 +1,7 @@
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { adminLogin, getAllUsers, getUserById, deleteUser } from "../controllers/adminAuthController";
-import { authenticateAdminToken } from "../middleware/adminMiddleware"; // Assuming you create this middleware
+import { registerAdmin, adminLogin, getAllUsers, getUserById, deleteUser } from "../controllers/adminAuthController";
+import { authenticateAdminToken } from "../middleware/adminMiddleware";
 
 const router: Router = express.Router();
 
@@ -20,28 +20,35 @@ const sensitiveAdminLimiter = rateLimit({
 });
 
 /**
- * @route POST /admin/login
+ * @route POST /api/v1/admin/register
+ * @desc Register a new admin
+ * @access Private (Admin)
+ */
+router.post("/admin/register", authenticateAdminToken, sensitiveAdminLimiter, registerAdmin);
+
+/**
+ * @route POST /api/v1/admin/login
  * @desc Authenticate an admin and issue a JWT token
  * @access Public
  */
 router.post("/admin/login", adminLimiter, adminLogin);
 
 /**
- * @route GET /admin/users
+ * @route GET /api/v1/admin/users
  * @desc Get all users
  * @access Private (Admin)
  */
 router.get("/admin/users", authenticateAdminToken, sensitiveAdminLimiter, getAllUsers);
 
 /**
- * @route GET /admin/users/:id
+ * @route GET /api/v1/admin/users/:id
  * @desc Get a user by ID
  * @access Private (Admin)
  */
 router.get("/admin/users/:id", authenticateAdminToken, sensitiveAdminLimiter, getUserById);
 
 /**
- * @route DELETE /admin/users/:id
+ * @route DELETE /api/v1/admin/users/:id
  * @desc Delete a user by ID
  * @access Private (Admin)
  */

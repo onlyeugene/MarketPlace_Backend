@@ -8,7 +8,10 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
+const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
+// import swaggerDocument from './docs/authSwagger';
+// import profileSwaggerDocument from './docs/profileSwaggerDocument';
 const combinedSwagger_1 = __importDefault(require("./docs/combinedSwagger"));
 // Initialize environment variables
 dotenv_1.default.config();
@@ -22,4 +25,5 @@ app.use((0, helmet_1.default)());
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use('/api/v1/auth', authRoutes_1.default);
+app.use('/api/v1/auth', adminRoutes_1.default);
 exports.default = app;
